@@ -132,20 +132,20 @@ That converts a gap into an architecture decision.
 ```
 +---------------------------------------------------------------------------+
 | L5  PRESENTATION                                                           |
-|     Next.js PWA          | MapLibre GL dashboard | Citizen mobile PWA      |
+|     React + Vite PWA     | MapLibre GL dashboard | Citizen mobile PWA      |
 |     Recharts (snake line)| Review queue          | Decision card           |
 +---------------------------------------------------------------------------+
                                     | HTTPS / JSON, service-worker cached
 +---------------------------------------------------------------------------+
 | L4  API + AUTH                                                             |
-|     FastAPI  |  JWT + RBAC (SUPER_ADMIN / DISTRICT_ADMIN / FIELD_OFFICER   |
-|              |               / CITIZEN)  |  row-level district scoping     |
-|              |  append-only audit log    |  Pydantic v2 schemas            |
+|     Node.js  |  JWT + RBAC (SUPER_ADMIN / DISTRICT_ADMIN / FIELD_OFFICER   |
+|     Fastify  |               / CITIZEN)  |  row-level district scoping     |
+|              |  append-only audit log    |  JSON-schema route validation   |
 +---------------------------------------------------------------------------+
 +---------------------------------------------------------------------------+
 | L3  ORCHESTRATION                                                          |
-|     APScheduler (hourly forecast cycle) | Redis (cache + queue)            |
-|     Celery workers (heavy geo jobs)     | idempotent runs, frozen inputs   |
+|     node-cron (hourly forecast cycle)   | Redis (cache + queue, optional)  |
+|     Python jobs for heavy geo work      | idempotent runs, frozen inputs   |
 +---------------------------------------------------------------------------+
 +---------------------------------------------------------------------------+
 | L2  DOMAIN LOGIC                                                           |
@@ -168,17 +168,41 @@ That converts a gap into an architecture decision.
 
 ### 5.1 Backend
 
+**Decision (revised at step V2): the API layer is Node.js, not Python.**
+
+The original plan put the whole backend in Python/FastAPI. That was changed once
+the split of work became concrete. The reasoning:
+
+| Half of the system | Language | Why |
+|---|---|---|
+| API, auth, workflow, alerting, DB access | **Node.js** | This half is HTTP, JSON and SQL. The spatial work happens *inside PostGIS*, so the API layer only issues queries — it never touches a raster. Sharing JavaScript with the React frontend puts two of three developers in one language |
+| Tank model, susceptibility, runout, SHAP | **Python** | Raster I/O (`rasterio`), labelled arrays (`xarray`), differentiable simulation (PyTorch) and explainability (SHAP) have no serious Node equivalent |
+
+The boundary is `docs/API_CONTRACT.md` — plain JSON over HTTP, deliberately
+language-agnostic. Nothing in that contract changed when the backend language did,
+which is the point of writing the contract before the code.
+
+**One genuine consequence:** runout computation (steepest-descent path on the DEM,
+angle of reach) is raster work, so it moves into `ml/` on the Python side. The
+contract already allows this — `mock_ml_output.json` carries
+`runout.envelope_geojson`. The backend receives a finished polygon and intersects
+it in PostGIS.
+
 | Choice | Version | Why this and not the alternative |
 |---|---|---|
-| **Python** | **3.11 or 3.12** | See §6 — **not 3.14.** Geospatial wheels lag new Python releases |
-| **FastAPI** | 0.115+ | Async, automatic OpenAPI docs (free API documentation for the demo), Pydantic validation. Flask would need all of this bolted on |
-| **Uvicorn** | 0.30+ | ASGI server, matches FastAPI |
-| **Pydantic** | v2 | Enforces the "never fabricate" rules *in the type system* — e.g. `population_estimate` is a labelled estimate type, not a bare int |
-| **SQLAlchemy** | 2.0 | ORM with real typing |
-| **GeoAlchemy2** | 0.15+ | Maps PostGIS geometry columns into the ORM |
-| **Alembic** | 1.13+ | Schema migrations — needed the moment two people work on the DB |
-| **APScheduler** | 3.10+ | Runs the hourly forecast cycle in-process. **Chosen over Celery Beat for the prototype** — one fewer moving part |
-| **Celery + Redis** | 5.4 / 7 | Only for genuinely long jobs (SAR processing, batch runout). Optional on day 3 |
+| **Node.js** | **22 LTS** | Built-in test runner (`node --test`) and `--env-file` remove two dependencies. LTS means security patches through 2027 |
+| **Fastify** | 5.x | Faster than Express, and schema-first: the JSON schema on each route *is* the validation *and* the OpenAPI documentation. Express would need `express-validator` plus `swagger-jsdoc` bolted on and kept in sync by hand |
+| **@fastify/swagger + swagger-ui** | 9.x / 6.x | Interactive `/docs` page generated from the route schemas. Riya can test any endpoint in the browser without asking Vishwajeet |
+| **@fastify/cors** | 10.x | Browsers block `localhost:5173 → localhost:8000` by default. This is the single most common blocker in frontend/backend integration; configured on day one |
+| **node:test** | built-in | No Jest, no Vitest, no config file. `app.inject()` calls routes in-process — no port, no network, millisecond runs |
+| **postgres** (or `pg`) | 3.x | PostGIS geometry is generated by SQL functions (`ST_AsGeoJSON`), so a thin driver is a better fit than an ORM that would need a spatial-type plugin |
+| **node-cron** | 3.x | Runs the hourly forecast cycle in-process. Chosen over a separate worker service for the prototype — one fewer moving part |
+
+**Schema-first validation replaces what Pydantic was doing.** The rule "never
+accept a fabricated number" is still enforced in the type system, just a different
+one: a route schema rejects `probability: 1.4`, a `runout` object with no
+`source_citation`, or `confidence_lower > confidence_upper` — before the handler
+ever runs.
 
 ### 5.2 Geospatial
 
@@ -206,7 +230,7 @@ That converts a gap into an architecture decision.
 
 | Choice | Why |
 |---|---|
-| **Next.js 15 (App Router) + TypeScript** | SSR for fast first paint on poor connections; one framework for dashboard and citizen app |
+| **React 18 + Vite** | Team decision: **React, not Next.js.** SSR buys little here — the dashboard is behind a login and the citizen app is a PWA that must work offline anyway. Vite's dev server starts in under a second, and there is no framework-specific routing or server-component model to learn under a 3-day deadline |
 | **MapLibre GL JS** | Vector tiles, GPU rendering, **no API key and no licence cost** (Mapbox GL went proprietary). Handles thousands of slope-unit polygons smoothly; Leaflet would struggle |
 | **Tailwind CSS** | Fast, consistent UI without inventing a design system in 3 days |
 | **Recharts** | The snake-line chart and rainfall time series |
@@ -228,14 +252,17 @@ That converts a gap into an architecture decision.
 |---|---|
 | **Docker Compose** | Whole stack (`api`, `db`, `redis`, `web`, `worker`) with one command. Runs on a laptop for the demo *and* on one cheap VM. **Kubernetes would waste a day of our three** |
 | **MinIO** (or local FS) | S3-compatible photo storage; swap the endpoint for real S3 later |
-| **pytest + pytest-asyncio** | Tests. Required by the workflow rule: every step is tested before the next begins |
-| **ruff + mypy** | Lint and type-check; catches errors before runtime |
+| **node:test** (backend) | Built into Node 22 — no Jest, no config file. `app.inject()` runs routes in-process, so tests need no port and finish in milliseconds |
+| **pytest** (ml/) | Rudra's side. Required by the workflow rule: every step is tested before the next begins |
+| **ruff** (Python) / **eslint** (Node) | Lint; catches errors before runtime |
 
 ---
 
 ## 6. Environment warning — read before Day 1
 
-**The machine currently has Python 3.14.3. Do not build on it.**
+**This applies to `ml/` (Rudra's Python side). The Node backend has no such problem** — `npm install` in `backend/` takes about 20 seconds.
+
+**Do not build the ML side on Python 3.14.**
 
 `rasterio`, `GDAL`, `geopandas`, `shapely` and `whitebox` depend on compiled C/C++ extensions. Pre-built wheels for a brand-new Python release routinely lag by months, and without a wheel `pip install` tries to compile GDAL from source on Windows — which fails, or takes hours.
 
@@ -245,9 +272,11 @@ That converts a gap into an architecture decision.
 conda create -n landslide -c conda-forge python=3.11 gdal rasterio geopandas shapely pyproj rioxarray xarray whitebox lightgbm scikit-learn
 ```
 
-Then `pip install` the pure-Python packages (FastAPI, SQLAlchemy, GeoAlchemy2, Alembic, APScheduler, shap, ultralytics, pytest) inside that environment.
+Then `pip install` the pure-Python ML packages (shap, ultralytics, pytest, torch) inside that environment.
 
-**Budget 1.5 hours for this and expect friction. It is the single most likely thing to eat Day 1.**
+**Golden rule:** geo packages come from conda only, never pip. Mixing the two produces `DLL load failed` errors that are painful to debug.
+
+**Budget 1.5 hours for this and expect friction. It is the single most likely thing to eat Day 1** — and it is why the backend was moved off Python: the API layer no longer has to wait for this environment to work.
 
 ---
 
@@ -959,40 +988,56 @@ GET    /api/v1/hindcast/{event_id}                -> frozen-input replay (§18.4
 ## 21. Repository layout
 
 ```
-SIH/
+landslide-platform/
 ├── docs/
 │   ├── ARCHITECTURE.md              <- this file
+│   ├── API_CONTRACT.md              <- fixed JSON shapes: ML -> backend -> frontend
+│   ├── IMPLEMENTATION_STEPS.md      <- V0-V14, R1-R8, F1-F8
+│   ├── GIT_WORKFLOW.md              <- branching, commits, conflict rules
 │   ├── DATA_SOURCES.md              <- URL, licence, citation, retrieval date
 │   └── EVALUATION.md                <- metrics, splits, baseline results
-├── backend/
-│   ├── app/
-│   │   ├── main.py                  FastAPI entry
-│   │   ├── config.py                pilot district = one setting
-│   │   ├── db/                      models, session, alembic/
-│   │   ├── api/v1/                  routers
-│   │   ├── core/                    auth, rbac, audit, crs utils
-│   │   ├── ingest/                  rainfall.py moisture.py imagery.py inventory.py
-│   │   ├── terrain/                 dem.py slope_units.py attributes.py
-│   │   ├── hydrology/               tank.py critical_line.py
-│   │   ├── ml/                      susceptibility.py forecast.py calibration.py explain.py
-│   │   ├── runout/                  angle_of_reach.py
-│   │   ├── exposure/                intersect.py chainage.py
-│   │   ├── alerting/                cap.py templates/ dispatch.py authorise.py
-│   │   └── scheduler.py             hourly cycle
-│   └── tests/
-├── frontend/
-│   └── src/
-│       ├── app/(dashboard)/         map, risk, roads, priority, review
-│       ├── app/(citizen)/report/    camera + GPS PWA
-│       ├── components/              Map, SnakeLine, DecisionCard, RiskBadge
-│       └── lib/offline/             dexie queue, service worker
-├── ml/
+├── backend/                         Node.js -- Vishwajeet
+│   ├── package.json
+│   ├── src/
+│   │   ├── server.js                starts the HTTP listener
+│   │   ├── app.js                   builds the app (no listener -> fast tests)
+│   │   ├── core/                    config.js auth.js rbac.js audit.js
+│   │   ├── routes/                  meta.js slopeUnits.js predictions.js
+│   │   │                            risk.js fieldReports.js alerts.js
+│   │   ├── db/                      pool.js schema.sql migrations/ queries/
+│   │   ├── ingest/                  rainfall.js moisture.js mlOutput.js
+│   │   ├── ml/                      calibration.js explain.js
+│   │   ├── exposure/                intersect.js chainage.js
+│   │   ├── alerting/                cap.js templates/ dispatch.js authorise.js
+│   │   └── scheduler.js             hourly cycle (node-cron)
+│   └── test/
+├── ml/                              Python -- Rudra
+│   ├── terrain/                     dem.py slope_units.py attributes.py
+│   ├── hydrology/                   tank.py critical_line.py
+│   ├── susceptibility/              train.py calibration.py explain.py
+│   ├── runout/                      angle_of_reach.py   <- raster work lives here
 │   ├── notebooks/                   exploration only, never the pipeline
 │   └── experiments/                 ablation A / B / C
-├── data/                            gitignored; DATA_SOURCES.md is the manifest
+├── frontend/                        React + Vite -- Riya
+│   └── src/
+│       ├── dashboard/               map, risk, roads, priority, review
+│       ├── citizen/                 camera + GPS PWA
+│       ├── components/              Map, SnakeLine, DecisionCard, RiskBadge
+│       ├── lib/                     api client, mock JSON
+│       └── offline/                 dexie queue, service worker
+├── data/
+│   ├── sample/                      mock JSON -- committed
+│   ├── raw/                         gitignored
+│   └── processed/                   gitignored
+├── environment.yml                  Python env for ml/
 ├── docker-compose.yml
 └── README.md
 ```
+
+**Note on `runout/`:** it sits in `ml/`, not `backend/`. Runout is a raster
+computation (steepest-descent path on the DEM), and raster tooling is Python's
+strength. The backend receives a finished polygon through
+`runout.envelope_geojson` in the API contract and intersects it in PostGIS.
 
 ---
 
@@ -1000,7 +1045,7 @@ SIH/
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| 1 | Python 3.14 breaks the geo stack | **High** | Blocks everything | conda-forge + Python 3.11, done in hour one (§6) |
+| 1 | Python 3.14 breaks the geo stack | ~~High~~ **Reduced** | Blocks `ml/` only | conda-forge + Python 3.11, done at V0 ✅. **Further reduced at V2:** the backend moved to Node, so the API layer no longer depends on this environment at all. If Rudra's env breaks, Vishwajeet and Riya keep working |
 | 2 | Slope-unit threshold tuning eats Day 1 | Medium | Cascades | Timebox to 3 h; fall back to watershed basins without the hillslope split |
 | 3 | Inventory too sparse to train susceptibility | **High** | No Stage B/C | Ship Stage A (needs no training data); show inventory engine as the roadmap |
 | 4 | NASA Earthdata / ECMWF auth or GRIB parsing friction | Medium | No forcing data | Pre-download the May 2024 window to disk on Day 1 evening and cache it |

@@ -315,7 +315,7 @@ likha hai.
 
 1. WhatsApp par batao — "`probability` ko `failure_probability` karna hai"
 2. Teeno haan bolein
-3. **Vishwajeet** update kare: ye doc + mock file + Pydantic schema — **ek commit mein**
+3. **Vishwajeet** update kare: ye doc + mock file + route ka JSON schema — **ek commit mein**
 4. Commit message: `CONTRACT: rename probability -> failure_probability`
 5. Group mein bolo "contract change, `git pull` karo"
 

@@ -67,24 +67,68 @@ See [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
 
 ## Tech stack
 
-**Backend** — Python 3.11, FastAPI, Uvicorn, Pydantic v2, SQLAlchemy 2.0,
-GeoAlchemy2, Alembic, APScheduler, pytest
+**Backend** — Node.js 22 LTS, Fastify 5, `@fastify/swagger` (OpenAPI 3.1),
+`node:test` (built-in test runner), `postgres` / `pg`
 **Database** — PostgreSQL 16 + PostGIS 3.4 (via Docker Compose)
 **Frontend** — React.js (Vite), MapLibre GL JS, Tailwind CSS, Recharts,
 TanStack Query, Dexie/IndexedDB, Workbox
-**ML** — LightGBM, scikit-learn, PyTorch, SHAP, Ultralytics YOLO
+**ML** — Python 3.11, LightGBM, scikit-learn, PyTorch, SHAP, Ultralytics YOLO
 **Geospatial** — GDAL, rasterio, rioxarray, xarray, geopandas, shapely, pyproj,
-WhiteboxTools
+WhiteboxTools (Python side, Rudra's `ml/` folder)
 
-> **Python 3.11 only.** Do **not** use 3.14 — compiled geospatial packages
-> (GDAL, rasterio, geopandas) have no pre-built wheels for it yet, and pip will
-> try to compile GDAL from source on Windows, which fails.
+### Why Node for the backend and Python for ML
+
+The two halves have genuinely different needs:
+
+| Half | Language | Why |
+|---|---|---|
+| **API, auth, workflow, alerting** | Node.js | The backend is mostly HTTP, JSON and SQL. PostGIS does the spatial work inside the database, so the API layer only sends queries. Sharing JavaScript with the frontend means one language across two of the three developers |
+| **Tank model, susceptibility, runout, SHAP** | Python | Raster processing (`rasterio`), array maths (`xarray`), gradient-based models (PyTorch) and explainability (SHAP) have no serious Node equivalent |
+
+The boundary between them is `docs/API_CONTRACT.md` — plain JSON over HTTP,
+which is language-agnostic by design.
+
+> **Node 22 or newer.** The backend uses `node --test` and `--env-file`, both
+> built into Node 22. Older versions will need Jest and dotenv added.
+
+> **Python 3.11 only for `ml/`.** Do **not** use 3.14 — compiled geospatial
+> packages (GDAL, rasterio, geopandas) have no pre-built wheels for it yet, and
+> pip will try to compile GDAL from source on Windows, which fails.
 
 ---
 
 ## Setup
 
-### 1. Install Miniforge (once)
+### 1. Backend (Node.js) — Vishwajeet
+
+Install Node.js 22 LTS from https://nodejs.org, then:
+
+```bash
+cd backend
+npm install
+npm test
+npm run dev
+```
+
+Open http://127.0.0.1:8000/docs — interactive API documentation.
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Starts the server and restarts it on every file save |
+| `npm start` | Starts the server without watching (used in Docker) |
+| `npm test` | Runs the test suite |
+
+### 2. Frontend (React) — Riya
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 3. ML environment (Python) — Rudra
+
+Install Miniforge once:
 
 ```bash
 winget install CondaForge.Miniforge3
@@ -96,13 +140,13 @@ Then open **Miniforge Prompt** and enable conda in Git Bash:
 conda init bash
 ```
 
-Close and reopen your terminal.
-
-### 2. Create the environment
+Close and reopen your terminal, then:
 
 ```bash
 conda env create -f environment.yml
 conda activate landslide
+conda install -c conda-forge lightgbm scikit-learn shap whitebox -y
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
 Verify:
@@ -114,28 +158,10 @@ python -c "import rasterio, geopandas, shapely, pyproj; print('ok')"
 **Run `conda activate landslide` in every new terminal.** If you forget, you get
 the wrong Python and GDAL warnings.
 
-### 3. Start the database
+### 4. Start the database
 
 ```bash
 docker compose up -d
-```
-
-### 4. Run the backend
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-Open http://127.0.0.1:8000/docs
-
-### 5. Run the frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
 ```
 
 ---
@@ -144,23 +170,23 @@ npm run dev
 
 ```
 landslide-platform/
-├── backend/            FastAPI, database, APIs, alert workflow  (Vishwajeet)
-│   ├── app/
-│   │   ├── api/v1/     REST endpoints
-│   │   ├── core/       auth, RBAC, audit, CRS utilities
-│   │   ├── db/         SQLAlchemy models, migrations
-│   │   ├── ingest/     rainfall, soil moisture, imagery
-│   │   ├── terrain/    DEM, slope units, attributes
-│   │   ├── hydrology/  three-tank model, critical line
-│   │   ├── ml/         model serving, calibration, explainability
-│   │   ├── runout/     angle of reach
-│   │   ├── exposure/   intersection, chainage
+├── backend/            Node.js API, database, alert workflow    (Vishwajeet)
+│   ├── src/
+│   │   ├── server.js   entry point — starts the HTTP listener
+│   │   ├── app.js      builds the app (no listener, so tests are fast)
+│   │   ├── routes/     HTTP endpoints
+│   │   ├── core/       config, auth, RBAC, audit, CRS utilities
+│   │   ├── db/         schema, migrations, queries
+│   │   ├── ingest/     rainfall, soil moisture, ML output
+│   │   ├── ml/         model output handling, calibration
+│   │   ├── exposure/   PostGIS intersection, chainage
 │   │   └── alerting/   CAP XML, templates, authorisation
-│   └── tests/
-├── ml/                 notebooks and experiments               (Rudra)
+│   └── test/
+├── ml/                 Python notebooks and experiments        (Rudra)
 ├── frontend/src/       React dashboard and citizen PWA         (Riya)
 ├── data/sample/        mock JSON so everyone can work parallel
 ├── docs/               architecture, API contract, steps, git workflow
+├── environment.yml     Python env for ml/ (Rudra)
 └── docker-compose.yml
 ```
 

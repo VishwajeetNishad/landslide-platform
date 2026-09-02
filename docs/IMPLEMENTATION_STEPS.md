@@ -155,18 +155,37 @@ Hinglish mein: *mock data = nakli data jo shakal mein asli jaisa ho. Isse har ba
 
 ---
 
-## V2 — FastAPI "hello world" chalao ⏱️ ~30 min | RISK: LOW
+## V2 — Node backend "hello world" chalao ⏱️ ~45 min | RISK: LOW ✅ DONE
 
-**KYA:** `requirements.txt`, `backend/app/main.py` mein ek chhota FastAPI app, `config.py` mein settings, aur `uvicorn` se server chalao.
+> **Faisla badla:** shuru mein backend Python/FastAPI socha tha. V2 par pahunch kar
+> Node.js chuna. **Kyun:** backend ka kaam mostly HTTP + JSON + SQL hai — spatial
+> kaam **PostGIS ke andar** hota hai, API layer sirf query bhejta hai. Node lene se
+> Vishwajeet aur Riya ek hi language mein aa gaye. Raster ka kaam (runout) Rudra ke
+> `ml/` mein chala gaya, jahan woh waise bhi behtar hai.
+>
+> **`docs/API_CONTRACT.md` mein ek line nahi badli** — JSON language-agnostic hai.
+> Contract pehle likhne ka yahi fayda hai.
+
+**KYA:** `backend/package.json`, `src/core/config.js` (settings), `src/app.js`
+(app banata hai), `src/server.js` (app chalata hai), `src/routes/meta.js`
+(`/` aur `/health`), `test/meta.test.js` (6 test).
 
 **KYUN:**
-- *FastAPI kya hai?* Python framework jisse hum ML ka result API ke through frontend tak bhejenge.
-- *Uvicorn kya hai?* Woh server jo FastAPI ko actually run karta hai aur browser ki request sunta hai.
-- *`/docs` kya hai?* FastAPI **khud-ba-khud** ek interactive API documentation page banata hai. Riya ko API samajhne ke liye ye bahut kaam aayega — aur demo mein bhi impressive lagta hai.
+- *Fastify kya hai?* Node framework jisse hum ML ka result API ke through frontend tak bhejenge. Express se tez hai aur **schema-first** hai — route par likha JSON schema hi validation bhi hai aur documentation bhi.
+- *`/docs` kya hai?* Route schemas se **khud-ba-khud** interactive API documentation page ban jaata hai. Riya bina Vishwajeet se poochhe koi bhi endpoint browser mein test kar sakti hai — aur demo mein bhi impressive lagta hai.
+- *`app.js` aur `server.js` alag kyun?* `app.js` app **banata** hai par port par sunta nahi. Test usko `app.inject()` se seedha bulata hai — koi port, koi network nahi, millisecond mein chalta hai. `server.js` alag hai jo `.listen()` karta hai. Isko **app factory pattern** kehte hain.
+- *CORS kya hai?* Browser ka rule: `localhost:5173` (Riya) `localhost:8000` (API) se data nahi maang sakti, kyunki port alag hai. Ye **#1 cheez hai jispar frontend-backend integration atakta hai** — isliye pehle din laga diya.
+- *`/health` mein `database: not_configured` kyun?* Kyunki DB abhi laga hi nahi (V3 mein aayega). Jhootha `"ok"` sabse khatarnaak jawab hai — Docker khush rahega, monitoring khush rahegi, aur API har request par crash hoga.
 
-**TEST:** `uvicorn app.main:app --reload` → browser mein `http://127.0.0.1:8000` (JSON message) aur `http://127.0.0.1:8000/docs` (Swagger UI page).
+**TEST:**
+```bash
+cd backend && npm test          # 6 pass hone chahiye
+npm run dev                     # phir browser mein:
+```
+`http://127.0.0.1:8000` (JSON), `http://127.0.0.1:8000/health`, `http://127.0.0.1:8000/docs` (Swagger UI)
 
-**DONE JAB:** Dono URL kaam karein. **Ye tumhara original "Step 1" hai** — bas V0 ke baad aa raha hai.
+**DONE JAB:** ✅ 6/6 test pass, teeno URL kaam kar rahe, CORS header dikh raha,
+`npm audit` par 0 vulnerabilities.
 
 ---
 
