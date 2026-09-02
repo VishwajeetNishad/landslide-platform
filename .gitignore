@@ -51,7 +51,7 @@ venv/
 env/
 envs/
 
-# ---------- NODE / REACT (Riya) ----------
+# ---------- NODE (Vishwajeet ka backend + Riya ka frontend) ----------
 # node_modules mein hazaron files hoti hain, GBs mein.
 # package.json se dobara ban jaate hain.
 node_modules/
@@ -59,6 +59,16 @@ dist/
 build/
 .vite/
 *.local
+
+# npm/yarn ke apne log
+npm-debug.log*
+yarn-error.log*
+.npm/
+
+# NOTE: package-lock.json GITIGNORE MEIN NAHI HAI -- woh commit hota hai.
+# KYUN: lock file mein exactly kaunsa version install hua tha likha hota
+# hai. Iske bina Rudra ke laptop par thoda alag version aa sakta hai aur
+# "mere yahan toh chal raha tha" wali problem hoti hai.
 
 # ---------- ML ----------
 # Trained model files bade hote hain. Chhote ho toh baad mein

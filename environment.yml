@@ -1,5 +1,5 @@
 # ============================================================
-# environment.yml  --  ek command mein poori team ka same environment
+# environment.yml  --  ML side (Rudra) ka Python environment
 #
 # Banane ke liye:   conda env create -f environment.yml
 # Activate:         conda activate landslide
@@ -9,6 +9,10 @@
 # par alag banta hai, isliye woh GitHub par nahi jaata. Ye chhoti si
 # "recipe" file jaati hai, jisse koi bhi exactly same env bana leta hai.
 # Isko "reproducibility" kehte hain.
+#
+# NOTE (V2 mein badla): backend ab Node.js hai, Python nahi. Isliye
+# FastAPI/SQLAlchemy/Alembic ismein se hata diye -- woh ab
+# backend/package.json mein hain. Ye env ab SIRF ml/ folder ke liye hai.
 # ============================================================
 name: landslide
 
@@ -33,49 +37,48 @@ dependencies:
   - rioxarray
   - xarray
 
-  # ---------- Database driver ----------
-  - psycopg2
+  # ---------- Terrain / hydrology ----------
+  # WhiteboxTools: DEM conditioning, flow accumulation, watershed,
+  # Hillslopes -> hamare slope units. GRASS install kiye bina.
+  - whitebox
+
+  # ---------- ML ----------
+  - lightgbm
+  - scikit-learn
 
   # ---------- Baaki (pure Python) pip se ----------
-  # In par conda-pip conflict nahi hota, aur pip par ye zyada up-to-date
-  # milte hain.
   - pip
   - pip:
-      # --- API layer ---
-      - fastapi>=0.115
-      - uvicorn[standard]>=0.30
-      - pydantic>=2.9
-      - pydantic-settings>=2.5
+      # --- Explainability ---
+      # SHAP: har alert ke liye "ye kyun fire hua" ka jawab.
+      # Official trust ke liye ye optional nahi hai.
+      - shap>=0.46
 
-      # --- Database / ORM ---
-      - sqlalchemy>=2.0
-      - geoalchemy2>=0.15
-      - alembic>=1.13
+      # --- Detection path (post-event mapping) ---
+      - ultralytics>=8.3
 
-      # --- Auth (V10 mein use hoga) ---
-      - python-jose[cryptography]>=3.3
-      - passlib[bcrypt]>=1.7
-      - python-multipart>=0.0.9
+      # --- Rudra ka output backend ko bhejne ke liye ---
+      - requests>=2.32
 
-      # --- Scheduling (hourly forecast cycle) ---
-      - apscheduler>=3.10
-
-      # --- Testing aur code quality ---
+      # --- Testing ---
       - pytest>=8.3
-      - pytest-asyncio>=0.24
-      - httpx>=0.27
+
+      # --- Lint ---
       - ruff>=0.7
 
 # ============================================================
 # NOTE Rudra ke liye:
-# ML packages ismein jaan-boojh kar nahi hain, taaki backend env halka rahe.
-# Env banane ke baad ye alag chalao:
+#
+# PyTorch ismein jaan-boojh kar nahi hai -- conda se woh bahut bada
+# download karta hai. Env banane ke baad ye alag chalao:
 #
 #   conda activate landslide
-#   conda install -c conda-forge lightgbm scikit-learn shap whitebox -y
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   pip install ultralytics
 #
-# torch CPU version hi kaafi hai -- teen-tank model chhota hai, GPU ki
+# CPU version hi kaafi hai -- teen-tank model chhota hai, GPU ki
 # zarurat nahi.
+#
+# GOLDEN RULE: geo packages (gdal, rasterio, geopandas, shapely, pyproj)
+# KABHI pip se mat install karna. Conda se hi aayenge. Mix karne par
+# "DLL load failed" aata hai jo debug karna bahut painful hai.
 # ============================================================
