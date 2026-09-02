@@ -1,0 +1,81 @@
+# ============================================================
+# .gitignore  -- kya cheezein GitHub par KABHI nahi jaani chahiye
+# ============================================================
+# Golden rule: repo mein code + config + chhote sample files jaate hain.
+# Bada data aur secrets NAHI.
+
+# ---------- SECRETS (sabse important) ----------
+# Password ek baar push hua toh Git history mein HAMESHA reh jaata hai,
+# baad mein file delete karne par bhi. Isliye pehle din se block.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---------- BADA DATA ----------
+# GitHub 100 MB se badi file REJECT karta hai.
+# Ek DEM tile aksar 100+ MB ka hota hai.
+# data/sample/ ke chhote mock files exception hain (neeche allow kiye hain).
+data/*
+!data/sample/
+!data/README.md
+*.tif
+*.tiff
+*.img
+*.vrt
+*.hgt
+*.nc
+*.grib
+*.grib2
+*.zip
+*.tar.gz
+!data/sample/*.geojson
+!data/sample/*.json
+
+# ---------- PYTHON ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---------- ENVIRONMENTS ----------
+# Environment machine-specific aur GB mein hota hai.
+# Iski jagah environment.yml commit karte hain (~20 lines).
+.venv/
+venv/
+env/
+envs/
+
+# ---------- NODE / REACT (Riya) ----------
+# node_modules mein hazaron files hoti hain, GBs mein.
+# package.json se dobara ban jaate hain.
+node_modules/
+dist/
+build/
+.vite/
+*.local
+
+# ---------- ML ----------
+# Trained model files bade hote hain. Chhote ho toh baad mein
+# case-by-case allow karenge.
+*.pt
+*.pth
+*.pkl
+*.joblib
+*.h5
+mlruns/
+wandb/
+
+# ---------- OS / EDITOR ----------
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

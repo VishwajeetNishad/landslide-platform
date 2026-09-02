@@ -1,0 +1,295 @@
+{
+  "_comment": "MOCK DATA -- illustrative values, NOT real forecasts. This is exactly what GET /api/v1/risk/current?district=aizawl will return from Vishwajeet's V9 step. Riya builds the whole dashboard against this file and swaps in the live URL later -- zero code change, because the shape is identical.",
+
+  "meta": {
+    "district_id": "aizawl",
+    "district_name": "Aizawl",
+    "run_ts": "2026-09-03T10:00:00+05:30",
+    "valid_from": "2026-09-03T20:00:00+05:30",
+    "valid_to": "2026-09-04T08:00:00+05:30",
+    "model_version": "tank-stageA-v0.1",
+    "is_demo_data": true,
+    "_comment_demo": "is_demo_data: true -> the UI MUST render a visible orange 'DEMO DATA' banner. This flag is the single switch that keeps us honest. When real data flows, the backend sets it false and the banner disappears by itself."
+  },
+
+  "summary": {
+    "total_slope_units": 5,
+    "high_risk_count": 1,
+    "medium_risk_count": 1,
+    "low_risk_count": 3,
+    "pending_verification_count": 2,
+    "lead_time_hours": 10,
+    "_comment_lead_time": "lead_time_hours = valid_from minus run_ts. This is the number that actually matters -- it is how much warning a district officer gets."
+  },
+
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "slope_unit_id": "AZ-1142",
+        "ward_name": "Melthum",
+
+        "probability": 0.72,
+        "confidence_lower": 0.58,
+        "confidence_upper": 0.84,
+        "risk_level": "HIGH",
+        "verification_status": "PENDING_VERIFICATION",
+        "_comment_three_fields": "probability / risk_level / verification_status are THREE SEPARATE FIELDS. Riya must render them in three separate places. Never colour the map by probability and call it risk.",
+
+        "exposure_summary": {
+          "buildings_count": 17,
+          "population_estimate": 120,
+          "population_label": "Estimated potentially exposed population: 120",
+          "road_metres": 340,
+          "critical_facility_count": 1
+        },
+
+        "why": [
+          "Soil water index 142 mm — highest in 30 days",
+          "Forecast rainfall 186 mm in 24 h (8.9% of annual normal)",
+          "Mean slope 34°, road cut 45 m upslope"
+        ],
+        "counterfactual": "40 mm less antecedent rainfall and this would not have fired",
+        "data_quality": {
+          "nearest_gauge_km": 11.0,
+          "rainfall_confidence": "MODERATE",
+          "label": "Nearest rain gauge 11 km away — moderate confidence"
+        },
+
+        "has_field_report": true,
+        "field_report_count": 1,
+        "_comment_field_report": "A citizen crack report exists for this unit. It RAISES the probability -- tension cracks are one of the very few visible precursors of slope failure. This is why requirement (e) is scientific, not decorative.",
+
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [[
+            [92.7180, 23.7290], [92.7212, 23.7288], [92.7230, 23.7240],
+            [92.7214, 23.7208], [92.7176, 23.7214], [92.7164, 23.7258],
+            [92.7180, 23.7290]
+          ]]
+        }
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [92.7180, 23.7290], [92.7212, 23.7288], [92.7224, 23.7266],
+          [92.7208, 23.7248], [92.7178, 23.7252], [92.7166, 23.7272],
+          [92.7180, 23.7290]
+        ]]
+      }
+    },
+
+    {
+      "type": "Feature",
+      "properties": {
+        "slope_unit_id": "AZ-1147",
+        "ward_name": "Melthum",
+        "probability": 0.68,
+        "confidence_lower": 0.52,
+        "confidence_upper": 0.81,
+        "risk_level": "MEDIUM",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "buildings_count": 9,
+          "population_estimate": 61,
+          "population_label": "Estimated potentially exposed population: 61",
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Soil water index 138 mm",
+          "Forecast rainfall 186 mm in 24 h",
+          "Road cut 22 m upslope, mean slope 39°"
+        ],
+        "counterfactual": "30 mm less antecedent rainfall and this would not have fired",
+        "data_quality": {
+          "nearest_gauge_km": 11.0,
+          "rainfall_confidence": "MODERATE",
+          "label": "Nearest rain gauge 11 km away — moderate confidence"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [[
+            [92.7224, 23.7266], [92.7252, 23.7262], [92.7264, 23.7218],
+            [92.7242, 23.7196], [92.7212, 23.7204], [92.7208, 23.7248],
+            [92.7224, 23.7266]
+          ]]
+        }
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [92.7224, 23.7266], [92.7252, 23.7262], [92.7260, 23.7240],
+          [92.7238, 23.7226], [92.7210, 23.7234], [92.7208, 23.7248],
+          [92.7224, 23.7266]
+        ]]
+      }
+    },
+
+    {
+      "type": "Feature",
+      "properties": {
+        "slope_unit_id": "AZ-1088",
+        "ward_name": "Bawngkawn",
+        "probability": 0.95,
+        "confidence_lower": 0.88,
+        "confidence_upper": 0.98,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "_comment_TEST_CASE": "THE MOST IMPORTANT ROW IN THIS FILE. probability 0.95 (highest of all five) but risk_level LOW, because exposure is zero -- nobody and nothing is downslope. Riya: the map must show this unit as LOW even though its probability is the highest. If a judge asks 'is your risk just the model score?', point at AZ-1088. V8's unit test asserts this exact case.",
+        "exposure_summary": {
+          "buildings_count": 0,
+          "population_estimate": 0,
+          "population_label": "No exposed population identified in runout envelope",
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Soil water index 152 mm — very high",
+          "Mean slope 42°, steepest unit in district",
+          "Road cut 12 m upslope"
+        ],
+        "counterfactual": "this unit fires even at 60 mm less antecedent rainfall",
+        "data_quality": {
+          "nearest_gauge_km": 9.0,
+          "rainfall_confidence": "MODERATE",
+          "label": "Nearest rain gauge 9 km away — moderate confidence"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [[
+            [92.7412, 23.7508], [92.7434, 23.7506], [92.7448, 23.7470],
+            [92.7430, 23.7454], [92.7404, 23.7460], [92.7400, 23.7492],
+            [92.7412, 23.7508]
+          ]]
+        }
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [92.7412, 23.7508], [92.7434, 23.7506], [92.7440, 23.7488],
+          [92.7426, 23.7478], [92.7406, 23.7484], [92.7402, 23.7498],
+          [92.7412, 23.7508]
+        ]]
+      }
+    },
+
+    {
+      "type": "Feature",
+      "properties": {
+        "slope_unit_id": "AZ-1203",
+        "ward_name": "Chaltlang",
+        "probability": 0.24,
+        "confidence_lower": 0.14,
+        "confidence_upper": 0.37,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "buildings_count": 2,
+          "population_estimate": 11,
+          "population_label": "Estimated potentially exposed population: 11",
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Soil water index 118 mm — elevated but below critical line",
+          "Mean slope 27°, forest cover, no road cut"
+        ],
+        "counterfactual": "80 mm more rainfall would push this unit above the critical line",
+        "data_quality": {
+          "nearest_gauge_km": 14.0,
+          "rainfall_confidence": "LOW",
+          "label": "Nearest rain gauge 14 km away — low confidence"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": null
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [92.7320, 23.7420], [92.7368, 23.7416], [92.7382, 23.7382],
+          [92.7356, 23.7358], [92.7314, 23.7366], [92.7302, 23.7398],
+          [92.7320, 23.7420]
+        ]]
+      }
+    },
+
+    {
+      "type": "Feature",
+      "properties": {
+        "slope_unit_id": "AZ-0964",
+        "ward_name": "Durtlang",
+        "probability": 0.08,
+        "confidence_lower": 0.03,
+        "confidence_upper": 0.17,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "buildings_count": 0,
+          "population_estimate": 0,
+          "population_label": "No exposed population identified in runout envelope",
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Soil water index 94 mm — well below critical line",
+          "Mean slope 22°, dense forest, 520 m from nearest road"
+        ],
+        "counterfactual": "no plausible rainfall in this window brings this unit above the critical line",
+        "data_quality": {
+          "nearest_gauge_km": 16.0,
+          "rainfall_confidence": "LOW",
+          "label": "Nearest rain gauge 16 km away — low confidence"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": null
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [92.7060, 23.7620], [92.7118, 23.7614], [92.7136, 23.7574],
+          [92.7104, 23.7546], [92.7052, 23.7558], [92.7038, 23.7596],
+          [92.7060, 23.7620]
+        ]]
+      }
+    }
+  ],
+
+  "snake_line": {
+    "_comment": "The snake line: cumulative short-term rainfall on X, long-term soil wetness on Y. The trajectory wriggles like a snake as it moves through the last 72 hours. Where it crosses the critical curve, the slope enters a failure state. Riya: this is a Recharts scatter+line chart. It is the best 20 seconds of the demo -- never cut it.",
+    "slope_unit_id": "AZ-1142",
+    "x_label": "Short-term rainfall, last 3 h (mm)",
+    "y_label": "Soil water index (mm)",
+    "critical_curve": [
+      { "x": 0,  "y": 190 },
+      { "x": 10, "y": 168 },
+      { "x": 20, "y": 150 },
+      { "x": 30, "y": 136 },
+      { "x": 40, "y": 125 },
+      { "x": 50, "y": 117 },
+      { "x": 60, "y": 111 },
+      { "x": 80, "y": 103 }
+    ],
+    "trajectory": [
+      { "ts": "2026-09-01T10:00:00+05:30", "x": 2,  "y": 62,  "crossed": false },
+      { "ts": "2026-09-01T16:00:00+05:30", "x": 6,  "y": 71,  "crossed": false },
+      { "ts": "2026-09-01T22:00:00+05:30", "x": 4,  "y": 78,  "crossed": false },
+      { "ts": "2026-09-02T04:00:00+05:30", "x": 11, "y": 89,  "crossed": false },
+      { "ts": "2026-09-02T10:00:00+05:30", "x": 8,  "y": 96,  "crossed": false },
+      { "ts": "2026-09-02T16:00:00+05:30", "x": 15, "y": 108, "crossed": false },
+      { "ts": "2026-09-02T22:00:00+05:30", "x": 22, "y": 121, "crossed": false },
+      { "ts": "2026-09-03T04:00:00+05:30", "x": 19, "y": 131, "crossed": false },
+      { "ts": "2026-09-03T10:00:00+05:30", "x": 26, "y": 142, "crossed": false },
+      { "ts": "2026-09-03T22:00:00+05:30", "x": 34, "y": 158, "crossed": true, "is_forecast": true },
+      { "ts": "2026-09-04T04:00:00+05:30", "x": 41, "y": 171, "crossed": true, "is_forecast": true }
+    ],
+    "_comment_forecast": "is_forecast: true points are the FORECAST tail -- draw them as a dashed line. The solid part is what already happened; the dashed part is where the rainfall forecast says the slope is heading. The lead time IS the dashed part."
+  }
+}
