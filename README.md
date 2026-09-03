@@ -214,6 +214,7 @@ landslide-platform/
 | [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) | **Start here.** Setup, folder ownership, and the exact first commands for Rudra and Riya |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, tech-stack rationale, DB schema, evaluation method |
 | [docs/IMPLEMENTATION_STEPS.md](docs/IMPLEMENTATION_STEPS.md) | Step-by-step build plan (V0–V14, R1–R8, F1–F8) |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | What is actually finished, how it was tested, what broke |
 | [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) | Branching, commits, conflict rules |
 | [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | Fixed JSON formats between ML → backend → frontend |
 | [data/README.md](data/README.md) | Data sources, licences, citations |
