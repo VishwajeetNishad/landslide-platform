@@ -23,10 +23,66 @@ import swaggerUi from '@fastify/swagger-ui';
 import { config } from './core/config.js';
 import { closePool, setDbLogger } from './db/pool.js';
 import { registerMetaRoutes } from './routes/meta.js';
+import { registerPredictionRoutes } from './routes/predictions.js';
 import { registerSlopeUnitRoutes } from './routes/slope_units.js';
+
+/**
+ * Schema failure par status code kaun decide karega.
+ *
+ * Fastify default 400 deta hai. Par 400 ka matlab hai "main request
+ * SAMAJH hi nahi paaya" -- jaise JSON toota hua ho. Rudra ka body toh
+ * bilkul theek JSON hai aur saare key ke naam sahi hain; galat uska
+ * MATLAB hai (probability 1.5 aayi, ya confidence band ulta hai). Uske
+ * liye 422 hai -- "samajh gaya, par accept nahi kar sakta".
+ *
+ * Ye kyun matter karta hai: docs/API_CONTRACT.md 422 promise karta hai
+ * aur Riya ka error handling usi ke against likha hai. Backend 400 bheje
+ * toh uska "validation error dikhao" wala branch chalega hi nahi.
+ *
+ * SIRF body ke liye 422. querystring aur params 400 par hi rahenge --
+ * `?district=AIZAWL;DROP` galat URL hai, galat matlab nahi, aur V6 ke
+ * test uske 400 par khade hain.
+ */
+function schemaErrorFormatter(errors, dataVar) {
+  // AJV ka `instancePath` "/predictions/0/probability" jaisa hota hai.
+  // Usko "predictions[0].probability" bana rahe hoon, kyunki Rudra ne
+  // JSON usi shakal mein likha hai -- JSON Pointer padhkar samajhna
+  // padta hai, ye seedha dikhta hai.
+  const details = errors.map((e) => {
+    const field = (e.instancePath || '')
+      .replace(/^\//, '')
+      .replace(/\/(\d+)/g, '[$1]')
+      .replace(/\//g, '.');
+    return field ? `${field}: ${e.message}` : e.message;
+  });
+
+  const err = new Error(
+    dataVar === 'body'
+      ? `The request body was understood but is not acceptable: ${details.length} problem(s). ` +
+        'Nothing was written.'
+      : `${dataVar} validation failed: ${details.join('; ')}`,
+  );
+
+  err.statusCode = dataVar === 'body' ? 422 : 400;
+  err.details = details;
+  return err;
+}
 
 export async function buildApp({ logger = true } = {}) {
   const app = Fastify({
+    schemaErrorFormatter,
+    // allErrors: saari galtiyaan ek baar mein batao, sirf pehli nahi.
+    //
+    // AJV default mein pehli galti par ruk jaata hai (fast fail). Uska
+    // matlab: Rudra 12 prediction bhejta hai, teen mein probability galat
+    // hai, aur usko sirf pehli dikhti hai. Woh theek karta hai, dobara
+    // bhejta hai, doosri dikhti hai. Teen round trip ek kaam ke liye.
+    //
+    // Iska ek known risk hai -- bahut bada nested body bhejkar koi jaan
+    // boojh kar hazaaron error bana sakta hai (CPU aur memory kharch).
+    // Yahan body ek forecast run hai, kuch dozen prediction, size limit
+    // Fastify ka default 1 MB. Is scale par risk nahi hai.
+    ajv: { customOptions: { allErrors: true } },
     // forceCloseConnections: on app.close(), also destroy sockets that are
     // sitting idle on HTTP keep-alive.
     //
@@ -141,9 +197,70 @@ export async function buildApp({ logger = true } = {}) {
     await closePool();
   });
 
+  // ---------- Error handler ----------
+  // Sirf ek kaam ke liye: `details` array ko response mein bhejna.
+  //
+  // Fastify ka default error handler sirf { statusCode, error, message }
+  // bhejta hai -- error object par lagaya hua koi bhi extra field chup-chaap
+  // gir jaata hai. V7 ke 422 mein asli kaam ki cheez wahi `details` hai:
+  // "predictions[2].probability: must be <= 1". Uske bina Rudra ko sirf
+  // "3 problem(s)" dikhta aur teen kya hain woh sirf server log mein hota,
+  // jo uske paas nahi hai.
+  app.setErrorHandler((err, request, reply) => {
+    const status = err.statusCode ?? 500;
+
+    // "Ye error humne KHUD banaya tha ya ye kahin se aa gira?"
+    //
+    // Ye farq zaruri hai. requireDatabase() jaan-boojh kar 503 phenkta hai
+    // jiska message kaam ka hai -- "DATABASE_URL is not set". Uske ulta,
+    // Postgres se aaya hua error ya code ka bug bhi yahan aata hai, aur
+    // uske message mein aksar constraint ka naam ya table ka structure
+    // hota hai, jo client ko nahi jaana chahiye.
+    //
+    // Pehle main sirf `status >= 500` dekh raha tha, toh 503 ka asli
+    // message bhi dab gaya aur V6 ke test toot gaye. Isliye ab dekhta hoon
+    // ki statusCode kisi ne SET kiya tha ya default 500 laga hai.
+    const weRaisedItOnPurpose = typeof err.statusCode === 'number' && err.statusCode !== 500;
+
+    // 500 ka message client ko nahi bhejte. Server log mein poora error,
+    // response mein sirf itna.
+    if (status >= 500 && !weRaisedItOnPurpose) {
+      request.log.error({ err }, 'Unhandled error');
+      return reply.code(status).send({
+        statusCode: status,
+        error: 'Internal Server Error',
+        message: 'The request could not be completed. The failure has been logged.',
+      });
+    }
+
+    // 503 bhi log karte hain -- dependency down hona chup-chaap nahi
+    // guzarna chahiye, chahe message client ko chala jaaye.
+    if (status >= 500) {
+      request.log.error({ err }, 'Dependency unavailable');
+    }
+
+    // `error` field mein HTTP ka standard naam. `new Error()` ka name bas
+    // "Error" hota hai, jo client ko kuch nahi batata -- toh status code se
+    // naam nikaal rahe hoon.
+    const STATUS_NAMES = {
+      400: 'Bad Request',
+      404: 'Not Found',
+      422: 'Unprocessable Entity',
+      503: 'Service Unavailable',
+    };
+
+    return reply.code(status).send({
+      statusCode: status,
+      error: err.name === 'Error' ? (STATUS_NAMES[status] ?? 'Error') : err.name,
+      message: err.message,
+      ...(err.details ? { details: err.details } : {}),
+    });
+  });
+
   // ---------- Routes ----------
   await registerMetaRoutes(app);
   await registerSlopeUnitRoutes(app);
+  await registerPredictionRoutes(app);
 
   return app;
 }

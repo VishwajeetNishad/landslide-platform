@@ -954,3 +954,236 @@ V3.4 container + PostGIS · V3.5 Node connection · V3.6 graceful shutdown
     schema failure.
 
 ---
+
+## V7 — the prediction ingest endpoint ✅ 2026-09-04
+
+**What was done**
+
+    `backend/src/routes/predictions.js` takes Rudra's forecast output:
+
+        POST /api/v1/predictions/ingest   -> 201, or 422 naming every problem
+
+    One request carries one `forecast_run` and its `predictions[]`, each
+    with an optional `runout` envelope and `exposure` block. The whole
+    thing is one transaction, so a body that is valid for two predictions
+    and wrong on the third writes nothing at all — not the earlier
+    predictions and not the `forecast_run` row. A half-ingested run would
+    render as a partial forecast rather than a failed one, and nothing
+    downstream could tell the difference.
+
+    The path is `predictions/ingest`. `API_CONTRACT.md` and
+    `IMPLEMENTATION_STEPS.md` both say that; `DEMO_PLAN.md` says
+    `/api/v1/ml/forecast`. Went with two documents against one, and with
+    the file Rudra actually reads. Not resolved in DEMO_PLAN.md.
+
+    Validation sits in three layers, deliberately overlapping.
+
+    JSON Schema does shape, types and ranges. It runs before the handler
+    and doubles as the /docs page, so Rudra can read the contract from a
+    browser instead of from this repo.
+
+    The handler does what JSON Schema cannot express, which is every rule
+    comparing two fields to each other: `input_cutoff_ts` after `run_ts`
+    (temporal leakage), `valid_to` at or before `valid_from`, an inverted
+    confidence band, a probability outside its own band, a SHAP
+    contribution that is not a finite number, a population figure with no
+    source, and the same slope unit twice in one run. It also refuses the
+    four fields that are not the model's to set, and asks the database
+    whether each `slope_unit_id` exists so an orphan prediction is a 422
+    naming the id rather than a 500 from the foreign key.
+
+    CHECK constraints are the last line. They repeat most of the above on
+    purpose: the route is not the only writer, and if I write a bug in a
+    handler the database still refuses the row.
+
+    422, not Fastify's default 400. 400 means "I could not understand the
+    request"; 422 means "I understood it and it is not acceptable". A
+    `schemaErrorFormatter` in `app.js` promotes body failures to 422 and
+    leaves querystring and path failures at 400, because a bad URL really
+    is a request that was not understood, and V6's tests stand on those
+    staying 400.
+
+    AJV now runs with `allErrors: true`. Without it it stops at the first
+    failure, so twelve predictions with three bad probabilities take
+    three round trips to fix.
+
+    `app.setErrorHandler` exists for one reason: Fastify's default
+    handler sends only `{ statusCode, error, message }` and silently
+    drops any extra field on the error object. The useful part of a 422 is
+    exactly that dropped field — `details: ["predictions[2].probability:
+    must be <= 1"]`. Without it Rudra would see "3 problem(s)" and the
+    three would only exist in a server log he does not have.
+
+    Field paths are rewritten from AJV's `instancePath`
+    (`/predictions/0/probability`) into `predictions[0].probability`,
+    which is the shape the JSON was written in.
+
+    Four fields are refused by name rather than ignored: `risk_level`,
+    `verification_status`, `verified_by`, `is_demo_data`. Naming them
+    matters because Fastify's AJV runs `removeAdditional: true`, so
+    `additionalProperties: false` would *strip* them silently — Rudra
+    would send a `risk_level`, the backend would discard it, and he would
+    believe it was honoured. `INSERT_PREDICTION` omits the column
+    entirely so `risk_level` stays NULL, and the 201 returns
+    `risk_level: null` explicitly, because a missing key could be read as
+    "risk was computed and came out fine".
+
+    `_comment` keys are stripped recursively before anything is stored.
+    The contract file documents itself with `_comment` inside `drivers`,
+    inside `rainfall`, and inside a road segment, and those objects are
+    JSONB columns. `drivers` is rendered as a SHAP bar chart, so a
+    surviving `_comment` would arrive as a feature whose contribution is a
+    sentence.
+
+    `is_demo_data` is derived, never asserted: `config.demoMode ||
+    mockUnits > 0`. Rows outvote the flag in one direction only. Real
+    slope units can switch the banner off; mock ones cannot be hidden by
+    setting `DEMO_MODE=false` on the morning of the demo.
+
+    Two things are fixed up rather than refused. `road_metres`, when
+    absent, is summed from `road_segments[].metres` — leaving it NULL
+    beside a named road segment would print "0 m of road" next to the road
+    it is naming. And `is_estimate` is forced `true` whatever the caller
+    sends, because every figure here comes out of a modelled runout
+    envelope, not a survey.
+
+    Some inputs are suspicious rather than wrong, and those come back as a
+    `warnings` array beside the 201: a `source_citation` that reads like a
+    placeholder, a runout with no `angle_of_reach_deg`, a mock
+    `population_source`, and `is_estimate: false` on a population figure.
+    Refusing them would block the shipped mock file, which DEMO_PLAN.md
+    plans to post during the demo.
+
+    `backend/src/db/migrations/008_geometry_validity.sql` adds five
+    constraints — see "what broke" below for why.
+
+**How it was tested**
+
+    `backend/test/predictions.test.js`, 26 tests in the same two-group
+    split as V6: what needs no database runs under `npm test`, the rest is
+    skipped unless `DATABASE_URL` is set.
+
+        npm test          -> 49 pass, 0 fail
+        npm run test:db   -> 72 pass, 0 fail, 3 skipped
+
+    Every fixture is built by mutating `data/sample/mock_ml_output.json`
+    rather than hand-written, so a change to the contract file shows up
+    here as a failure instead of leaving these tests quietly checking a
+    shape nobody sends any more.
+
+    The shipped contract file posts clean: 201, three predictions, three
+    runouts, three exposures, `is_demo_data: true`, `mock_slope_units: 3`,
+    `risk_level: null`, and six warnings (three placeholder citations plus
+    three mock population sources).
+
+    Verified in psql that `risk_level` is NULL on all three rows,
+    `verification_status` is `PENDING_VERIFICATION`, `verified_by` and
+    `verified_at` are NULL, no `_comment` survived into any JSONB column,
+    the runout envelopes are SRID 4326 and `ST_IsValid`, `road_metres` is
+    340 derived from the segment sum, and `is_estimate` is true
+    everywhere.
+
+    Fifteen refusal cases each return 422 with the offending field named:
+    probability 1.5, an inverted band, a probability outside its band,
+    temporal leakage, a missing `input_cutoff_ts`, an unknown
+    `slope_unit_id`, a `risk_level` from the model, a
+    `verification_status` from the model, a runout with no
+    `source_citation`, a population figure with no source, the same slope
+    unit twice, an empty predictions array, `valid_to` before
+    `valid_from`, a bare timestamp with no UTC offset, and a string SHAP
+    contribution.
+
+    A population of **zero** with no source is accepted, tested
+    explicitly. "Nobody is exposed" is a finding, not an estimate, and
+    AZ-1088 — probability 0.95, exposure zero, risk LOW — depends on being
+    able to record exactly that.
+
+    All-or-none was proven by counting `forecast_run` rows before and
+    after a body wrong only on its last prediction: unchanged.
+
+    V6's two 400s were re-checked and are still 400. The formatter
+    promotes body failures only.
+
+**What broke or was learned**
+
+    `GEOMETRY(POLYGON, 4326)` checks the type and the SRID. It does not
+    check that the polygon is valid. Found by accident: a runout envelope
+    posted with a three-position, unclosed ring was accepted, stored as
+
+        POLYGON((92.74 23.75, 92.745 23.75, 92.745 23.746))
+
+    with `ST_IsValid` false, and the endpoint answered 201. Grepping the
+    migrations confirmed no `ST_IsValid` existed anywhere in the schema.
+
+    This is dangerous rather than untidy. The runout envelope is the input
+    to the exposure intersection, and `ST_Intersection` on an invalid
+    polygon does not raise — it returns an empty geometry. So the
+    buildings and roads under the slope come out as zero, the risk step
+    reads zero exposure, and it answers LOW on a populated hillside. A
+    confident LOW from a malformed polygon, with nothing in the log. That
+    is the exact failure this project exists to prevent.
+
+    Fixed in two places, on purpose. Migration 008 constrains
+    `runout_envelope` and `slope_unit` with `ST_IsValid` and
+    `ST_NPoints >= 4`, so the rule applies to every writer including the
+    loader, R7, and anyone in psql. The route asks PostGIS first so the
+    caller gets a 422 quoting `ST_IsValidReason` —
+    "Self-intersection[92.7425 23.748]" — rather than a 500 from a
+    constraint. Verified both: the unclosed ring now returns "a polygon
+    ring needs at least 4 positions and this has 3", and a bowtie (closed,
+    five positions, passes every count check) returns the crossing
+    coordinate.
+
+    008 also constrains `slope_unit.centroid` to lie within 500 m of its
+    own polygon. `ST_DWithin` on geography rather than `ST_Contains`,
+    because `ST_Centroid` legitimately falls outside a concave hillslope.
+    The column exists so the map can put a pin on a slope unit, and a
+    centroid belonging to a different polygon would put that pin on the
+    wrong hillside while both values looked reasonable on their own.
+
+    Migration 008 would not apply at first: two probe forecast runs had
+    already written invalid envelopes, and `ALTER TABLE ... ADD CHECK`
+    validates existing rows. Deleted those runs, then it applied in 82 ms.
+    Worth remembering for any later constraint — a constraint added after
+    the data is a different job from one added before it.
+
+    `requireDatabase()` was running before the body checks, so a
+    `risk_level` sent by the model answered 503 instead of 422 whenever
+    the database happened to be down. Wrong answer: those rules need
+    nothing but the body. Moved the body-only validation ahead of it,
+    which also means Rudra can check his output shape against the real
+    endpoint without running Docker.
+
+    `app.setErrorHandler` masked the 503 message too, because it keyed off
+    `status >= 500` alone. `requireDatabase()`'s message is the useful
+    part of a 503 — "DATABASE_URL is not set" — while a genuine 500 from
+    Postgres often carries a constraint name that should not leave the
+    server. Now it distinguishes an error we raised on purpose (a
+    `statusCode` that was set, and is not 500) from one that merely landed
+    here. V6's two 503 tests caught this.
+
+    The first `npm run test:db` left two stray `forecast_run` rows
+    labelled `tank-stageA-v0.1`, indistinguishable from the honest ingest,
+    because the DB-free group also runs when `DATABASE_URL` is set and two
+    of its tests reach a 201. Every test that can be accepted now tags
+    `model_version` as `test-<name>`, and the DB group's `after` hook
+    deletes exactly those. Verified the database is unchanged before and
+    after a run.
+
+**Pending**
+
+    Nothing for V7. The database holds one honest `forecast_run` (id 2,
+    `tank-stageA-v0.1`, `is_demo_data` true) with three predictions, three
+    runouts and three exposures — all with `risk_level` NULL, waiting for
+    V8.
+
+    Next is V8, `risk_level(probability, exposure)`, with the AZ-1088 test
+    as its first case. Then real exposure via the Overpass API, then V9's
+    dashboard endpoints.
+
+    Deferred, recorded, not built: enforcement that `risk_level` may only
+    be set once an `exposure` row exists. That is a cross-table rule and
+    no CHECK constraint can express it; it needs a trigger or a
+    statement-level guard in V8.
+
+---
