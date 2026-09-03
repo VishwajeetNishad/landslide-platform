@@ -120,11 +120,24 @@ Open http://127.0.0.1:8000/docs — interactive API documentation.
 
 ### 2. Frontend (React) — Riya
 
+`frontend/` currently holds only the empty folder skeleton — the Vite project is
+scaffolded as step **F1**, from the repository root:
+
+```bash
+npm create vite@latest frontend -- --template react
+```
+
+When Vite says the target directory is not empty, choose **"Ignore files and
+continue"** so the existing `src/` sub-folders survive. Then:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+Full step-by-step, including the Tailwind v4 and MapLibre setup, is in
+[docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) §7.
 
 ### 3. ML environment (Python) — Rudra
 
@@ -159,6 +172,8 @@ python -c "import rasterio, geopandas, shapely, pyproj; print('ok')"
 the wrong Python and GDAL warnings.
 
 ### 4. Start the database
+
+`docker-compose.yml` is added in step **V3**; this command does not work yet.
 
 ```bash
 docker compose up -d
@@ -196,6 +211,7 @@ landslide-platform/
 
 | File | What is in it |
 |---|---|
+| [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) | **Start here.** Setup, folder ownership, and the exact first commands for Rudra and Riya |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, tech-stack rationale, DB schema, evaluation method |
 | [docs/IMPLEMENTATION_STEPS.md](docs/IMPLEMENTATION_STEPS.md) | Step-by-step build plan (V0–V14, R1–R8, F1–F8) |
 | [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) | Branching, commits, conflict rules |
