@@ -45,6 +45,7 @@
 
 import { config } from '../core/config.js';
 import { getPool, query, withTransaction } from '../db/pool.js';
+import { calculateRiskLevel } from '../exposure/risk.js';
 
 /**
  * Same 503 as the slope unit routes, and for the same reason: it agrees
@@ -579,6 +580,12 @@ const INSERT_EXPOSURE = `
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `;
 
+const UPDATE_PREDICTION_RISK = `
+  UPDATE prediction
+  SET risk_level = $1
+  WHERE id = $2
+`;
+
 export async function registerPredictionRoutes(app) {
   app.post(
     '/api/v1/predictions/ingest',
@@ -739,6 +746,11 @@ export async function registerPredictionRoutes(app) {
             ]);
             exposures += 1;
           }
+
+          // Step V8: Calculate risk level from probability x exposure
+          // and update prediction.risk_level in the database.
+          const riskLevel = calculateRiskLevel(p.probability, p.exposure);
+          await client.query(UPDATE_PREDICTION_RISK, [riskLevel, predictionId]);
         }
 
         return { runId, runouts, exposures };
@@ -754,13 +766,11 @@ export async function registerPredictionRoutes(app) {
         is_demo_data: isDemoData,
         mock_slope_units: mockUnits,
 
-        // Returned explicitly as null rather than omitted, so nobody
-        // reads a missing key as "risk was computed and came out fine".
+        // Stored with risk_level computed from probability and exposure
         risk_level: null,
         note:
-          'Stored with risk_level NULL and verification_status PENDING_VERIFICATION. ' +
-          'Risk is computed from probability and exposure by the risk step, and verification ' +
-          'requires a named officer.',
+          'Stored with risk_level computed from probability and exposure, and verification_status PENDING_VERIFICATION. ' +
+          'Verification requires a named officer.',
         warnings,
       };
     },
