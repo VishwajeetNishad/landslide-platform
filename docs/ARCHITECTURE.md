@@ -660,7 +660,7 @@ Assumes a 6-person team working in parallel, and the environment problem in §6 
 | Task | Hours | Owner | Risk |
 |---|---|---|---|
 | conda environment, all geo libs importing, `pytest` green | 1.5 | 1 | **HIGH** — most likely time sink |
-| Docker Compose up: Postgres + PostGIS + Redis; Alembic initial migration | 1.5 | 1 | Low |
+| Docker Compose up: Postgres + PostGIS + Redis; initial SQL migrations | 1.5 | 1 | Low |
 | Download Copernicus DEM for Aizawl; compute slope/aspect/curvature; render a PNG you can look at | 2.0 | 1 | Low |
 | Slope units via WhiteboxTools chain (§10.2); tune stream threshold to 1–20 ha | 3.0 | 2 | **MEDIUM** — threshold tuning is fiddly. Fallback: watershed basins without the hillslope split |
 | Load OSM buildings/roads/POIs, WorldPop, WorldCover, geology into PostGIS | 2.0 | 1 | Low |
@@ -685,7 +685,7 @@ Assumes a 6-person team working in parallel, and the environment problem in §6 
 
 | Task | Hours | Owner | Risk |
 |---|---|---|---|
-| FastAPI endpoints + JWT + RBAC district scoping + audit log | 3.0 | 1 | Medium |
+| Fastify endpoints + JWT + RBAC district scoping + audit log | 3.0 | 1 | Medium |
 | MapLibre dashboard: risk heatmap, layer toggles, unit detail panel | 4.0 | 2 | Medium |
 | Citizen PWA: camera, GPS, category, IndexedDB offline queue | 2.5 | 1 | Medium |
 | Review queue + decision card + authorisation state machine | 3.0 | 1 | Medium |
@@ -705,7 +705,7 @@ Decide this **now**, not at 2 a.m. on Day 3.
 | SAR / Sentinel-1 processing | Detection path, not the early-warning claim |
 | Real Bhashini API calls | Ship 3 hand-written frozen templates instead |
 | YOLO-seg comparison run | Present as planned work with the baseline citation |
-| Celery workers | APScheduler in-process is enough |
+| Redis job queue | node-cron in-process is enough |
 | Seismic-weakening term | A nice differentiator, not load-bearing |
 
 **Never cut:** the snake line, the decision card, the human authorisation gate, and the rehearsals. Those four *are* the presentation.

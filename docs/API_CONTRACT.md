@@ -269,13 +269,14 @@ jaata. **Yahi resource misallocation logon ki jaan leta hai.**
 
 Ye V8 ka unit test hai:
 
-```python
-def test_high_probability_zero_exposure_is_low_risk():
-    """AZ-1088: 0.95 probability, zero exposure -> LOW.
-    Risk is likelihood x consequence, never likelihood alone."""
-    assert risk_level(0.95, Exposure(population_estimate=0,
-                                     road_metres=0,
-                                     critical_facilities=[])) == RiskLevel.LOW
+```js
+test('AZ-1088: probability 0.95, exposure zero -> LOW', () => {
+  // Risk = likelihood x consequence. Sirf likelihood se kabhi nahi.
+  assert.equal(
+    riskLevel(0.95, { populationEstimate: 0, roadMetres: 0, criticalFacilities: [] }),
+    'LOW',
+  );
+});
 ```
 
 Judge poochhega "aapka risk model score hi hai na?" — `AZ-1088` dikha dena.
@@ -331,6 +332,12 @@ python -m json.tool data/sample/mock_ml_output.json > /dev/null && echo OK
 ```
 
 `OK` aaya = valid JSON. Error aaya = comma ya bracket galat.
+
+Jiske paas Python nahi hai (Riya), woh Node se wahi kaam karega:
+
+```bash
+node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" data/sample/mock_risk_api_response.json && echo OK
+```
 
 **Rudra ke liye:** output bhejne se pehle hamesha ye chalao.
 **Riya ke liye:** browser DevTools → Network tab → response dekh lo.

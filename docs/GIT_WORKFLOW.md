@@ -30,7 +30,7 @@ Ye 5 samajh liye toh 90% Git aa gaya:
 
 **2. Commit** — Ek "save point". Jaise game mein checkpoint. Har commit mein ek message hota hai jo batata hai kya badla.
 ```
-commit abc123  "V2: FastAPI hello world endpoint add kiya"
+commit abc123  "V2: Fastify hello world endpoint add kiya"
 commit def456  "V3: PostGIS docker-compose setup"
 ```
 Kabhi bhi kisi bhi purane commit par wapas ja sakte ho. **Isliye Git safety net hai** — kuch tod diya toh ghabrao mat, wapas jaa sakte ho.
@@ -40,7 +40,7 @@ Kabhi bhi kisi bhi purane commit par wapas ja sakte ho. **Isliye Git safety net 
 ```
 main     ●───●───●───────────────●  ← ye hamesha chalta hua code (demo-ready)
               \                 /
-v2-fastapi     ●───●───●───────●    ← Vishwajeet yahan kaam kar raha hai
+v2-node-backend     ●───●───●───────●    ← Vishwajeet yahan kaam kar raha hai
 ```
 
 Kyun zaroori hai: agar teeno log seedha `main` par kaam karein, toh Rudra ka aadha-toota code tumhare chalte hue code ke saath mix ho jaayega, aur demo ke waqt kuch bhi kaam nahi karega.
@@ -80,7 +80,7 @@ main   ●───────●───────────●───�
        │    V0 merge    V2 merge   R3 merge    F2 merge
        │       │           │           │           │
        ├─ v0-environment ──┘           │           │
-       ├─ v2-fastapi ──────────────────┘           │
+       ├─ v2-node-backend ─────────────┘           │
        ├─ r3-slope-units ──────────────────────────┘
        └─ f2-maplibre ─────────────────────────────────┘
 

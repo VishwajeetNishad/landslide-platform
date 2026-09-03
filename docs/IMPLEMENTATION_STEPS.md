@@ -56,7 +56,7 @@ Sabse important diagram. Isse pata chalega ki kaun bina rukey kaam kar sakta hai
             V1 Repo + Git     R1 ML env         F1 React setup
                   │                 │                 │
                   v                 v                 v
-            V2 FastAPI hello   R2 DEM download   F2 MapLibre blank map
+            V2 Fastify hello   R2 DEM download   F2 MapLibre blank map
                   │                 │                 │
                   v                 v                 │
             V3 Docker+PostGIS  R3 Slope units          │
@@ -205,19 +205,19 @@ npm run dev                     # phir browser mein:
 
 ---
 
-## V4 — Database schema + Alembic migration ⏱️ ~90 min | RISK: MEDIUM
+## V4 — Database schema + SQL migrations ⏱️ ~90 min | RISK: MEDIUM
 
-**KYA:** SQLAlchemy + GeoAlchemy2 models likho `ARCHITECTURE.md §19` ke schema se, aur Alembic se pehli migration chalao. Shuruaat mein sirf 4 tables: `district`, `slope_unit`, `forecast_run`, `prediction`. Baaki baad mein.
+**KYA:** `backend/migrations/` mein numbered `.sql` files likho (`001_extensions.sql`, `002_core_tables.sql`, …) aur ek chhota `migrate.js` runner banao jo unhe order mein chalaye aur `schema_migrations` table mein likhta jaaye ki kaun-kaunsi chal chuki hai. Shuruaat mein sirf 4 tables: `district`, `slope_unit`, `forecast_run`, `prediction`. Baaki baad mein.
 
 **KYUN:**
-- *ORM (SQLAlchemy) kya hai?* Isse hum SQL ki jagah Python classes likhte hain — kam galti, aur code padhne mein aasan.
-- *GeoAlchemy2 kyun?* SQLAlchemy ko PostGIS ke `GEOMETRY` column samajhne ke liye.
-- *Alembic kya hai?* Database ka "version control" — jaise git code ke liye. Jab tum table badloge, migration file ban jaayegi aur Rudra/Riya ek command se apna DB update kar lenge.
+- *Migration kya hai?* Database ka "version control" — jaise git code ke liye. Jab tum table badloge, ek nayi numbered file banegi aur Rudra/Riya ek command (`npm run migrate`) se apna DB update kar lenge. Sabka DB same rehta hai.
+- *ORM kyun NAHI le rahe?* ORM (Python mein SQLAlchemy, Node mein Prisma/Drizzle) SQL ko chhupa deta hai. Hamara schema PostGIS-heavy hai — `geometry(Polygon,4326)` columns, GiST spatial index, aur `CHECK` constraints. Ye teen cheezein har ORM mein "escape hatch" se raw SQL likhkar hi hoti hain. Toh abstraction ka fayda kuch nahi, sirf ek extra dependency aur ek extra cheez jo toot sakti hai. Seedha SQL likhna kam kaam hai **aur** viva mein padhkar dikhane layak hai.
+- *Query kaise chalegi?* `postgres` package (ek hi dependency) se — tagged template literals, jo automatically parameterise karke SQL injection rokte hain.
 - **Yahan sabse important baat:** `probability`, `risk_level`, aur `verification_status` — teen **alag columns**. Risk ko probability se calculate karke store nahi karenge. Aur `verification_status` ka default `PENDING_VERIFICATION` hoga. Ye tumhare project ka core scientific rule hai, aur hum isko **database mein hi enforce** karenge, sirf doc mein likhkar nahi.
 
-**TEST:** `alembic upgrade head` → DB mein `\dt` se tables dikhein → `slope_unit` mein `geom` column ka type `geometry(Polygon,4326)` ho.
+**TEST:** `npm run migrate` → `psql` mein `\dt` se tables dikhein → `\d slope_unit` mein `geom` column ka type `geometry(Polygon,4326)` ho → migration **dobara** chalao, "already applied, skipping" bole (idempotent).
 
-**DONE JAB:** Tables ban gaye aur geometry column ka type sahi hai.
+**DONE JAB:** Tables ban gaye, geometry column ka type sahi hai, aur migration dobara chalane par kuch nahi tootta.
 
 ---
 
@@ -246,16 +246,20 @@ npm run dev                     # phir browser mein:
 **DONE JAB:** Riya ke React app mein ye polygons render ho jaayein.
 
 > ## ⛳ CHECKPOINT I1 — Day 1 khatam
-> **Test:** Riya ka React app khulta hai, MapLibre map dikhta hai, aur **tumhare FastAPI se aaye asli Aizawl slope-unit polygons** us map par hain. Click karne par PostGIS se attributes aate hain.
+> **Test:** Riya ka React app khulta hai, MapLibre map dikhta hai, aur **tumhare Node API se aaye asli Aizawl slope-unit polygons** us map par hain. Click karne par PostGIS se attributes aate hain.
 > **Ye pass nahi hua toh Day 2 shuru nahi karna.** Pehle isko theek karo.
 
 ---
 
 ## V7 — ML output ingest karo ⏱️ ~60 min | RISK: MEDIUM
 
-**KYA:** `POST /api/v1/predictions/ingest` — Rudra ka JSON leke Pydantic se validate karo aur `forecast_run` + `prediction` tables mein store karo.
+**KYA:** `POST /api/v1/predictions/ingest` — Rudra ka JSON leke **Fastify ke JSON Schema** se validate karo aur `forecast_run` + `prediction` tables mein store karo.
 
-**KYUN:** *Pydantic* = data ka darban. Galat shakal ka JSON aaya toh saaf error dega, chupchaap galat data DB mein nahi jaayega. `forecast_run.input_cutoff_ts` bhi store karo — isse pata rahega ki model ne kaunsa data dekha tha, jo hindcast demo ke liye zaroori hai (§18.4).
+**KYUN:** *JSON Schema* = data ka darban. Route ke saath ek `body` schema lagta hai (`type`, `required`, `minimum`, `maximum`), aur Fastify request ko route ke andar ghusne se **pehle** hi check kar leta hai. Galat shakal ka JSON aaya toh saaf error dega, chupchaap galat data DB mein nahi jaayega. Bonus: wahi schema `/docs` mein khud documentation ban jaata hai — ek jagah likho, do kaam.
+
+> ⚠️ **Ek gotcha jo yaad rakhna:** Fastify schema fail hone par **400** deta hai, par hamara `API_CONTRACT.md` **422** bolta hai. 422 semantically sahi hai — JSON valid hai, matlab galat hai. Isliye V7 mein `schemaErrorFormatter` lagakar status 422 karna hoga. Agar ye nahi kiya toh Riya ka error handling contract se match nahi karega.
+
+`forecast_run.input_cutoff_ts` bhi store karo — isse pata rahega ki model ne kaunsa data dekha tha, jo hindcast demo ke liye zaroori hai (§18.4).
 
 **TEST:** `data/sample/mock_ml_output.json` `/docs` se POST karo → DB mein row aaye → phir jaan-boojh kar `probability: 1.5` bhejo → **422 error** aana chahiye.
 
@@ -432,7 +436,7 @@ Ye limitation nahi, **feature** hai: jo system khud alert bhej sakta hai, usko k
 2. SAR / Sentinel-1 processing
 3. Asli Bhashini API (3 hand-written frozen templates se kaam chala lo)
 4. YOLO comparison run
-5. Celery (APScheduler kaafi hai)
+5. BullMQ / Redis job queue (`node-cron` kaafi hai)
 6. Seismic weakening term
 7. UI polish
 
