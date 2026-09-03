@@ -59,9 +59,44 @@ baad mein lagega. Shape same hai, isliye **code badalna nahi padega** — sirf U
 
 ## 3. Contract #1 — Rudra → Vishwajeet
 
+### Ye endpoint AB LIVE hai (V7)
+
 **Endpoint:** `POST /api/v1/predictions/ingest`
-**Auth:** internal service token (V10 mein)
+**Auth:** internal service token (V10 mein) — abhi khula hai
 **Reference file:** [`data/sample/mock_ml_output.json`](../data/sample/mock_ml_output.json)
+
+Rudra ye file jaisi hi body bhejega. Wahi file abhi seedha post ki ja sakti
+hai aur **201** deti hai:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/predictions/ingest \
+  -H 'content-type: application/json' \
+  --data-binary @data/sample/mock_ml_output.json
+```
+
+Jawab:
+
+```json
+{
+  "forecast_run_id": 2,
+  "model_version": "tank-stageA-v0.1",
+  "predictions_stored": 3,
+  "runouts_stored": 3,
+  "exposures_stored": 3,
+  "risk_level": null,
+  "verification_status": "PENDING_VERIFICATION",
+  "is_demo_data": true,
+  "mock_slope_units": 3,
+  "warnings": [
+    "predictions[0].runout.source_citation reads like a placeholder ...",
+    "predictions[0].exposure.population_source is mock data and must not be quoted as a measurement ..."
+  ]
+}
+```
+
+`risk_level: null` **jaan-boojh kar** bheja jaata hai, hataya nahi jaata.
+Missing key ko koi "risk nikal gaya aur theek tha" padh sakta hai; `null`
+ka matlab saaf hai — abhi nikala hi nahi (V8 nikaalega).
 
 ### Top level
 
@@ -106,14 +141,119 @@ baad mein lagega. Shape same hai, isliye **code badalna nahi padega** — sirf U
 
 ### Backend jo REJECT karega (422)
 
+Ye poori list hai, aur har ek par ek test khada hai
+([`backend/test/predictions.test.js`](../backend/test/predictions.test.js)):
+
 | Case | Kyun |
 |---|---|
 | `probability` 0–1 ke bahar | Probability hai, percentage nahi |
 | `confidence_lower > confidence_upper` | Band ulta hai |
-| `slope_unit_id` DB mein nahi | Anaath prediction — kis slope ki hai? |
-| `runout` hai par `source_citation` nahi | **Bina citation koi number system mein nahi ghusega** |
+| `probability` apne hi band ke bahar | Ulta band se bhi bura — imaandaar uncertainty jaisa dikhta hai par arithmetic mein impossible hai |
+| `valid_to` ≤ `valid_from` | Window ulti ya zero-length |
 | `input_cutoff_ts` missing | Leakage prove nahi kar sakte |
+| `input_cutoff_ts` > `run_ts` | **Temporal leakage** — model ne apne chalne ke baad ka data use kiya |
+| Timestamp mein UTC offset nahi | `2026-09-03T10:00:00` ambiguous hai. IST +05:30 hai, toh isko UTC padhna cutoff ko 5.5 ghante **aage** khiskata hai — theek wahi direction jo future rainfall andar aane deta hai |
+| `slope_unit_id` DB mein nahi | Anaath prediction — kis slope ki hai? Message mein id likhi hoti hai |
+| Ek run mein ek slope unit do baar | Ek run = ek prediction per slope unit |
+| `predictions: []` khaali | Khaali run se `forecast_run` row banane ka koi matlab nahi |
+| `runout` hai par `source_citation` nahi | **Bina citation koi number system mein nahi ghusega** |
+| `runout.envelope_geojson` invalid polygon | Neeche dekho — ye chup-chaap LOW risk banata hai |
+| `drivers` ki koi value number nahi | SHAP contribution frontend par bar chart hai; string "high" bar ki height nahi ban sakti |
+| `population_estimate > 0` par `population_source` nahi | Population figure apni assumption ke bina andar nahi aata. **Zero exempt hai** — "koi exposed nahi" finding hai, estimate nahi (AZ-1088 ka case) |
 | `risk_level` bheja gaya | ❌ **Rudra risk_level NAHI bhejta** — dekho §5 |
+| `verification_status` bheja gaya | Woh naam-wale officer ka kaam hai (V11) |
+| `is_demo_data` bheja gaya | Backend derive karta hai, koi assert nahi kar sakta |
+
+### 422 ka body kaisa dikhta hai
+
+Fastify default 400 deta hai aur sirf ek line message. Yahan **422** hai aur
+`details` array mein **har** galti ka naam:
+
+```json
+{
+  "statusCode": 422,
+  "error": "Unprocessable Entity",
+  "message": "The request body was understood but is not acceptable: 2 problem(s). Nothing was written.",
+  "details": [
+    "predictions[0].probability: must be <= 1",
+    "predictions[1].confidence_upper: must be >= 0"
+  ]
+}
+```
+
+Do baatein isme jaan-boojh kar hain:
+
+- **Saari galtiyaan ek saath.** AJV default mein pehli par ruk jaata hai. 12
+  prediction mein 3 galat hon toh ek-ek theek karke teen round-trip lagte.
+- **Field ka naam `predictions[0].probability` shakal mein.** AJV `instancePath`
+  `/predictions/0/probability` deta hai; JSON usi shakal mein likha jaata hai
+  jismein Rudra ne likha hai, toh usi shakal mein wapas jaata hai.
+
+400 aur 422 ka farq: **400 = "main request samajh hi nahi paaya"** (toota
+JSON, galat URL). **422 = "samajh gaya, accept nahi kar sakta"**. Querystring
+aur path ki galtiyaan 400 par hi rehti hain.
+
+### Kuch bhi galat = kuch bhi save nahi
+
+Poora ingest **ek transaction** hai. 12 prediction mein sirf 12th galat ho
+toh pehle 11 bhi save nahi hote, `forecast_run` row bhi nahi banti. Aadha
+ingest hua run map par "adhoora forecast" nahi, "chala hua forecast" jaisa
+dikhta — aur aage koi step ye farq nahi bata sakta.
+
+### `runout` polygon invalid ho toh 422 — ye sabse chupa hua khatra tha
+
+V7 mein ye galti se mila. Postgres ka `GEOMETRY(POLYGON, 4326)` sirf **type**
+aur **SRID** check karta hai, **validity nahi**. Teen position wali unclosed
+ring accept ho gayi thi aur endpoint ne 201 diya tha.
+
+Ye untidy nahi, khatarnaak hai: runout envelope hi exposure intersection ka
+input hai. Invalid polygon par `ST_Intersection` error nahi deta — **khaali**
+geometry deta hai. Toh slope ke neeche ke ghar aur road zero aa jaate, aur
+risk step zero exposure padhkar **LOW** bol deta — populated hillside par,
+log mein ek bhi error ke bina.
+
+Ab do jagah band hai: `008_geometry_validity.sql` mein CHECK constraint (har
+writer par lagu, sirf is route par nahi), aur route pehle PostGIS se poochta
+hai taaki jawab 500 ki jagah 422 ho jo asli coordinate batata ho:
+
+```json
+"details": ["predictions[0].runout.envelope_geojson: Self-intersection[92.7425 23.748]"]
+```
+
+Ring band karna yaad rakhna — pehli position aakhir mein dobara. Loop mein
+polygon banate waqt yahi bhoolna sabse common hai, aur uska message hai
+"a polygon ring needs at least 4 positions and this has 3".
+
+### `warnings` — 201 ke saath aane wali baatein
+
+Kuch cheezein galat nahi par shak-wali hain. Unpar ingest rokna galat hota
+(shipped mock file khud demo mein post hoti hai), toh **201 milta hai aur
+`warnings` array mein naam aata hai**:
+
+- `source_citation` mein `PLACEHOLDER`, `TODO`, `TBD` jaisa kuch
+- `runout` hai par `angle_of_reach_deg` nahi
+- `population_source` mock hai — measurement ki tarah quote nahi karna
+- `is_estimate: false` bheja gaya population figure par
+
+Rudra: warnings khaali karna target hai, par R5 tak inke saath kaam chalega.
+
+### `_comment` keys hata di jaati hain
+
+Mock file khud ko `_comment` se document karti hai — `drivers` ke andar,
+`rainfall` ke andar, `road_segments[0]` ke andar. Ye JSONB column mein jaate
+hain, toh recursively strip hoti hain. Warna `drivers._comment` frontend par
+ek SHAP feature ban jaata jiska contribution ek poora vaakya hai.
+
+Matlab: `_` se shuru hone wala koi bhi key **save nahi hoti**. Comment likhna
+ho toh theek hai, par usme kaam ka data mat rakhna.
+
+### `exposure` par do cheezein backend khud kar leta hai
+
+- `road_metres` na bheja ho toh `road_segments[].metres` ka jod le liya jaata
+  hai. NULL rehne dena UI par "0 m road" likhwaata — us road ke naam ke bagal
+  mein jo wahin listed hai.
+- `is_estimate` hamesha `true` set hota hai, bheja hua maana nahi jaata. Yahan
+  har figure model ke runout envelope se aata hai, survey se nahi.
 
 ### Rudra ko exact message
 
@@ -122,6 +262,12 @@ baad mein lagega. Shape same hai, isliye **code badalna nahi padega** — sirf U
 > pehle batana — main API bhi badlunga aur ye doc bhi, ek hi commit mein.
 > **`risk_level` tu nahi bhejega** — woh backend exposure ke saath milakar
 > nikaalta hai.
+>
+> Endpoint live hai. Body galat hui toh **422** milega aur `details` array mein
+> exactly kaunsa field galat hai woh likha hoga — server log dekhne ki zarurat
+> nahi. Do cheezein khaas: har timestamp mein **UTC offset** lagana
+> (`+05:30`), aur runout ring **band** karna (pehli position aakhir mein
+> dobara), warna polygon invalid hai.
 
 ---
 
@@ -334,6 +480,17 @@ render karna **allowed nahi** hai.
 
 `risk_level` **backend** calculate karta hai. Rudra sirf `probability` bhejta hai.
 
+Ye V7 se **code mein enforce** hai, sirf likha hua rule nahi: ingest endpoint
+`risk_level` wale prediction ko 422 karta hai, aur `prediction` row `risk_level`
+NULL ke saath banti hai. V8 usko bharega.
+
+> **Chup-chaap drop kyun nahi karte:** Fastify ka AJV `removeAdditional: true`
+> par chalta hai, toh `additionalProperties: false` unknown field ko **strip**
+> karta hai, reject nahi. Rudra `risk_level` bhejta, backend chup-chaap phenk
+> deta, aur woh samajhta ki maan liya gaya. Isliye schema mein wo option
+> jaan-boojh kar nahi hai aur handler in field ko **naam lekar** refuse karta
+> hai.
+
 **Kyun:**
 
 Risk = **likelihood × consequence**. Model sirf likelihood jaanta hai. Consequence
@@ -377,7 +534,7 @@ Judge poochhega "aapka risk model score hi hai na?" — `AZ-1088` dikha dena.
 |---|---|---|---|
 | `/api/v1/slope-units` | GET | V6 | Slope unit polygons — **LIVE, section 4a dekho** |
 | `/api/v1/slope-units/{id}` | GET | V6 | Ek slope unit — **LIVE** |
-| `/api/v1/predictions/ingest` | POST | V7 | Rudra ka output leta hai |
+| `/api/v1/predictions/ingest` | POST | V7 | Rudra ka output leta hai — **LIVE, section 3 dekho** |
 | `/api/v1/risk/current` | GET | V9 | Riya ka main dashboard feed |
 | `/api/v1/predictions/{id}/verify` | POST | V11 | Officer confirm/reject kare |
 | `/api/v1/field-reports` | POST | V12 | Citizen geo-tagged photo |
