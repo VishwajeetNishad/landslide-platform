@@ -29,34 +29,60 @@ describe('meta routes', () => {
     await app.close();
   });
 
-  test('GET /health 200 aur status ok deta hai', async () => {
+  test('GET /health shape sahi deta hai', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
 
-    assert.equal(res.statusCode, 200);
+    // 200 ya 503 -- dono valid hain. 503 ka matlab "API zinda hai par
+    // koi dependency kharab hai". Isliye statusCode par nahi, SHAPE par
+    // assert kar rahe hain.
+    assert.ok([200, 503].includes(res.statusCode), `200 ya 503 chahiye, mila ${res.statusCode}`);
 
     const body = res.json();
-    assert.equal(body.status, 'ok');
     assert.equal(typeof body.version, 'string');
     assert.equal(typeof body.uptimeSeconds, 'number');
     assert.equal(body.checks.api, 'ok');
   });
 
-  test('GET /health har dependency ko alag-alag report karta hai', async () => {
-    // KYUN ye test: /health ko "sab ok hai" ka jhootha jawab nahi
-    // dena chahiye. Database abhi laga hi nahi hai (V3 mein aayega),
-    // toh usko saaf-saaf 'not_configured' bolna chahiye.
-    //
-    // Jhootha "ok" sabse khatarnaak jawab hai -- Docker khush rahega,
-    // monitoring khush rahegi, aur API har request par crash hoga.
+  test('GET /health database ka state ek jaana-pehchana value hai', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     const body = res.json();
 
     assert.ok('database' in body.checks, 'health mein database check hona chahiye');
-    assert.equal(
-      body.checks.database,
-      'not_configured',
-      'DB laga nahi hai toh not_configured bolna chahiye, jhootha ok nahi',
+    assert.ok(
+      ['ok', 'unavailable', 'no_postgis', 'not_configured'].includes(body.checks.database),
+      `database state anjaan hai: ${body.checks.database}`,
     );
+
+    // Test `--env-file` ke BINA chalte hain (dekho package.json), toh
+    // DATABASE_URL undefined hai aur normally yahan 'not_configured'
+    // aayega. Par exact value par assert nahi kar rahe -- warna jo
+    // banda .env load karke test chalaye uska test bina wajah tootega.
+  });
+
+  test('GET /health kabhi jhootha ok nahi bolta', async () => {
+    // YE IS FILE KA SABSE ZARURI TEST HAI.
+    //
+    // V2 mein bug tha: database 'not_configured' hote hue bhi status
+    // 'ok' aur HTTP 200 jaata tha. Wahi jhooth tha jisse bachne ke liye
+    // ye endpoint banaya gaya tha.
+    //
+    // "Green dashboard, dead service" sabse mehnga failure mode hai --
+    // Docker khush, monitoring khush, aur asli request har baar fail.
+    // Ye test us invariant ko pakad kar rakhta hai:
+    //
+    //   sab dependency ok  <=>  status 'ok'  aur  HTTP 200
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    const body = res.json();
+
+    const everythingOk = body.checks.api === 'ok' && body.checks.database === 'ok';
+
+    if (everythingOk) {
+      assert.equal(body.status, 'ok');
+      assert.equal(res.statusCode, 200);
+    } else {
+      assert.equal(body.status, 'degraded', 'dependency kharab hai toh status degraded hona chahiye');
+      assert.equal(res.statusCode, 503, 'dependency kharab hai toh HTTP 503 hona chahiye, 200 nahi');
+    }
   });
 
   test('GET / service info aur isDemoData flag deta hai', async () => {

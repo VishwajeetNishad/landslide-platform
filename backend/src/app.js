@@ -21,10 +21,27 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
 import { config } from './core/config.js';
+import { closePool, setDbLogger } from './db/pool.js';
 import { registerMetaRoutes } from './routes/meta.js';
 
 export async function buildApp({ logger = true } = {}) {
   const app = Fastify({
+    // forceCloseConnections: on app.close(), also destroy sockets that are
+    // sitting idle on HTTP keep-alive.
+    //
+    // WHY THIS IS NOT OPTIONAL. Without it, app.close() shuts the listener
+    // but leaves idle keep-alive sockets open. Those open handles keep the
+    // event loop alive, so the process never exits: the shutdown log lines
+    // appear, everything looks correct, and the process hangs until Docker
+    // gives up after 10 s and sends SIGKILL (exit code 137).
+    //
+    // This was a real bug found in V3.6, not a precaution. It is invisible
+    // on Windows, because SIGTERM is unsupported there, so it only appeared
+    // once the same code was given a real signal inside a Linux container.
+    // In production that means every deploy would SIGKILL the backend --
+    // and a SIGKILL mid-alert-dispatch is exactly the incomplete audit log
+    // that V13 must never produce.
+    forceCloseConnections: true,
     // logger: har request apne aap log hoti hai -- request id, method,
     // path, status, aur kitne millisecond lage. Ye debugging mein
     // console.log se bahut behtar hai.
@@ -101,6 +118,26 @@ export async function buildApp({ logger = true } = {}) {
   await app.register(swaggerUi, {
     routePrefix: '/docs',
     uiConfig: { docExpansion: 'list', deepLinking: true },
+  });
+
+  // ---------- Database ----------
+  // Pool khud yahan CONNECT nahi karta -- `new Pool()` sirf setting
+  // rakhta hai, asli connection pehli query par banta hai ("lazy").
+  //
+  // Ye jaan-boojh kar hai: agar buildApp() DB se connect karne ki koshish
+  // karta, toh Docker band hone par app hi start na hota aur test bhi na
+  // chalte. App khada hona chahiye, aur /health se BATANA chahiye ki DB
+  // nahi hai. Chup-chaap mar jaana sabse bura option hai.
+  setDbLogger(app.log);
+
+  // onClose hook: app.close() par pool bhi band ho jaaye.
+  //
+  // Yahan lagaya, server.js mein nahi -- kyunki test bhi app.close()
+  // karte hain. Server.js mein lagata toh test ke baad pool khula reh
+  // jaata aur `node --test` process hang ho jaata (khula socket process
+  // ko zinda rakhta hai).
+  app.addHook('onClose', async () => {
+    await closePool();
   });
 
   // ---------- Routes ----------
