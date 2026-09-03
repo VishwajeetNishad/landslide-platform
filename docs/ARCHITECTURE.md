@@ -769,6 +769,26 @@ Replay the May 2024 Aizawl event with **inputs frozen at a stated cut-off time**
 
 ## 19. Database schema
 
+> **What the prototype actually builds (V4.2, 3 September 2026).**
+> The SQL below is the full design. The prototype builds a trimmed subset:
+> `district`, `app_user`, `slope_unit`, `forecast_run`, `prediction`,
+> `runout_envelope`, `exposure`, `alert`, `audit_log`. Deliberately **not**
+> built yet: `rainfall`, `soil_moisture`, `tank_state`, `field_report`,
+> `landslide_inventory` — tank state and rainfall arrive inside the model's
+> JSON and are stored as `JSONB` on `prediction`, because nothing in the
+> prototype queries them across time.
+>
+> The live schema is `backend/src/db/migrations/*.sql`, and **those files are
+> the source of truth**, not this section. They also carry constraints added
+> since this was written: a temporal-leakage check on `forecast_run`, a
+> confidence band that must contain its own point estimate, a verification
+> status that cannot leave `PENDING_VERIFICATION` without a named human, and
+> per-row provenance (`slope_unit.source`, `forecast_run.is_demo_data`). The
+> audit log is made append-only by a **trigger** rather than by `REVOKE`,
+> because our application connects as the table owner and PostgreSQL skips
+> privilege checks for owners and superusers — the `REVOKE` would have been
+> silently ineffective. See `docs/PROGRESS.md` V4.2.
+
 ```sql
 -- ============ spatial substrate ============
 CREATE TABLE slope_unit (
