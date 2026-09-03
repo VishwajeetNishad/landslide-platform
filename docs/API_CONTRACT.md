@@ -127,6 +127,94 @@ baad mein lagega. Shape same hai, isliye **code badalna nahi padega** — sirf U
 
 ## 4. Contract #2 — Vishwajeet → Riya
 
+### 4a. Ye endpoint AB LIVE hai — `GET /api/v1/slope-units` (V6)
+
+`risk/current` (V9) abhi baaki hai, par **slope units ab asli database se aa
+rahe hain.** Riya isko aaj map par draw kar sakti hai — mock file ki zarurat
+nahi.
+
+```js
+const res = await fetch('http://localhost:8000/api/v1/slope-units?district=aizawl');
+map.addSource('slope-units', { type: 'geojson', data: await res.json() });
+```
+
+`district` optional hai; default pilot district (`aizawl`) hai.
+
+**Response** ek GeoJSON `FeatureCollection` hai jisme ek extra `meta` block hai:
+
+```json
+{
+  "type": "FeatureCollection",
+  "meta": {
+    "district_id": "aizawl",
+    "count": 5,
+    "mock_count": 5,
+    "is_demo_data": true,
+    "crs": "EPSG:4326",
+    "disclaimer": "5 of 5 slope unit(s) are illustrative geometry, not derived from a DEM. Do not quote their areas or locations as measurements."
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "AZ-1088",
+      "geometry": { "type": "Polygon", "coordinates": [[[92.7412, 23.7508], "..."]] },
+      "properties": {
+        "slope_unit_id": "AZ-1088",
+        "district_id": "aizawl",
+        "ward_name": "Bawngkawn",
+        "area_ha": 9.25,
+        "centroid": [92.742094, 23.749368],
+        "mean_slope_deg": 41.6,
+        "susceptibility_score": 0.91,
+        "source": "MOCK -- hand-drawn polygons over the Aizawl area, not derived from a DEM (data/sample/mock_slope_units.geojson)",
+        "is_mock": true
+      }
+    }
+  ]
+}
+```
+
+Baaki properties (`max_slope_deg`, `aspect_sin`, `aspect_cos`, `relief_m`,
+`profile_curvature`, `twi`, `lithology_class`, `landcover_class`,
+`geological_province`, `dist_to_road_m`, `has_road_cut`,
+`mean_annual_precip_mm`, `seismic_weakening`) bhi hain — 22 total. Ye Rudra ke
+model ke input feature hain, Riya ko sirf `ward_name`, `area_ha`,
+`susceptibility_score` aur `source`/`is_mock` chahiye honge.
+
+**Chaar cheezein jo dhyan rakhni hain:**
+
+| Cheez | Kya |
+|---|---|
+| `properties.slope_unit_id` | Feature ka `id` bhi wahi hai. `properties.id` **nahi** hai |
+| `is_mock` + `source` | **Har feature mein alag**, envelope mein nahi — response real aur mock mix kar sakta hai |
+| `meta.is_demo_data` | `DEMO_MODE` flag **YA** koi bhi mock row. Mock rows loaded hon toh `DEMO_MODE=false` isko band **nahi** kar sakta |
+| `area_ha` | Polygon se **naapa** gaya hai (`ST_Area`), file se copy nahi. 2 decimal = 100 m² |
+
+Single unit ke liye (click-a-polygon panel):
+
+```
+GET /api/v1/slope-units/AZ-1088   ->  ek bare Feature (FeatureCollection nahi)
+```
+
+Status codes:
+
+| Code | Kab |
+|---|---|
+| `200` | Mila |
+| `400` | `district` ya `id` identifier jaisa nahi (`^[a-z0-9_-]{2,40}$`) |
+| `404` | District exist nahi karta, ya slope unit id exist nahi karta — **khaali collection nahi** |
+| `503` | `DATABASE_URL` set nahi hai. `/health` bhi `not_configured` bolega |
+
+> **404 vs khaali collection:** `?district=aizwal` (typo) par khaali
+> `FeatureCollection` bhejna Riya ko khaali map dikhata aur wajah kabhi pata na
+> chalti. 404 saaf bolta hai "aisa district nahi hai".
+
+Coordinates 6 decimal par cap hain (~11 cm) — DEM-derived boundary se kaafi
+zyada barik. Axis order RFC 7946 wala hai: **`[longitude, latitude]`**, `[lat,
+lon]` nahi.
+
+### 4b. Poora dashboard feed (V9, abhi mock)
+
 **Endpoint:** `GET /api/v1/risk/current?district=aizawl`
 **Response:** GeoJSON `FeatureCollection` + extra top-level blocks
 **Reference file:** [`data/sample/mock_risk_api_response.json`](../data/sample/mock_risk_api_response.json)
@@ -287,7 +375,8 @@ Judge poochhega "aapka risk model score hi hai na?" — `AZ-1088` dikha dena.
 
 | Endpoint | Method | Step | Kaam |
 |---|---|---|---|
-| `/api/v1/slope-units` | GET | V6 | Slope unit polygons |
+| `/api/v1/slope-units` | GET | V6 | Slope unit polygons — **LIVE, section 4a dekho** |
+| `/api/v1/slope-units/{id}` | GET | V6 | Ek slope unit — **LIVE** |
 | `/api/v1/predictions/ingest` | POST | V7 | Rudra ka output leta hai |
 | `/api/v1/risk/current` | GET | V9 | Riya ka main dashboard feed |
 | `/api/v1/predictions/{id}/verify` | POST | V11 | Officer confirm/reject kare |

@@ -796,3 +796,161 @@ V3.4 container + PostGIS · V3.5 Node connection · V3.6 graceful shutdown
     the first thing Riya can draw on a map.
 
 ---
+
+## V6 — the slope unit API ✅ 2026-09-04
+
+**What was done**
+
+    `backend/src/routes/slope_units.js` serves the five loaded rows as
+    GeoJSON:
+
+        GET /api/v1/slope-units?district=aizawl   -> FeatureCollection
+        GET /api/v1/slope-units/:id               -> one bare Feature
+
+    This is checkpoint I1 — the first thing Riya can draw on a map from a
+    live API rather than from a file in her own repo.
+
+    The GeoJSON is built in SQL by `ST_AsGeoJSON`, not assembled in
+    JavaScript. Writing the coordinates out here would mean a second
+    implementation of a format PostGIS already emits correctly, and the
+    failure mode is quiet: a hand-built polygon with its rings wound the
+    wrong way, or with lat/lon swapped, still parses as valid GeoJSON and
+    simply draws in the wrong place. Letting the database serialise means
+    what the map shows is what the database holds.
+
+    `ST_AsGeoJSON` returns TEXT, so the query casts it `::jsonb`. Without
+    that cast `geometry` reaches the client as a JSON *string* containing
+    GeoJSON. It looks correct in a log line and MapLibre renders nothing.
+    A test asserts `typeof geometry === 'object'` for exactly this.
+
+    `source` and `is_mock` are on every feature, not once in the
+    envelope. The day Rudra's real file lands while some hand-drawn units
+    are still loaded, the response will legitimately mix real and mock
+    geometry, and one envelope flag could not describe that honestly.
+    `meta` carries `mock_count` as well, so the UI can decide about the
+    banner without walking every feature.
+
+    `meta.is_demo_data` is `config.demoMode OR any row is mock`, never
+    the flag alone. Setting `DEMO_MODE=false` on the morning of the demo
+    is the obvious thing to do, and it must not drop the banner while
+    illustrative polygons are still on screen. Rows outvote the flag in
+    one direction only — real data cannot switch the banner off.
+
+    Two numbers are rounded on the way out. `area_ha` to 2 dp, because
+    `ST_Area` gives 58.12302952152139 for AZ-0964 and fourteen
+    significant digits on a hand-drawn polygon claims precision to a
+    fraction of a square millimetre. Coordinates to 6 dp (~11 cm), far
+    finer than a DEM-derived hillslope boundary can justify; the default
+    15 digits would print 92.718000000000004 and roughly double the
+    payload.
+
+    Properties are listed explicitly in a `PROPERTIES` map rather than
+    selected with `*`, so adding a column later — an internal note, a
+    scratch score — does not silently publish it through the API. `geom`
+    in particular goes out only as the feature's `geometry`.
+
+    Four status codes, each meaning one thing. 503 when `DATABASE_URL` is
+    unset, agreeing with `/health`'s `not_configured` — a 500 beside that
+    would send whoever is debugging it looking for a bug in the SQL. 400
+    when `district` or `id` is not an identifier. 404 for an unknown
+    district *and* for an unknown id, because "you asked for something
+    that does not exist" and "nothing is loaded yet" are different
+    situations, and an empty FeatureCollection for both would hide a
+    typo'd district behind an empty map. The unknown-district check costs
+    a second query, run only when the first returns nothing, so the
+    common path stays one round trip.
+
+    `ORDER BY s.id`, so the layer does not reshuffle between refreshes.
+
+    `docs/API_CONTRACT.md` gained section 4a with the live response
+    shape, the four status codes and the four things to watch. Section 4
+    is now split: 4a is live, 4b is the V9 dashboard feed that is still
+    mock.
+
+**How it was tested**
+
+    `backend/test/slope_units.test.js`, 18 tests in two groups.
+
+    Four run with no database, which is what `npm test` gives (the test
+    script deliberately does not read `.env`). Two assert the 503 and
+    that its message names `DATABASE_URL` and `npm run migrate`; two
+    assert the 400s, including `?district=AIZAWL;DROP TABLE` and
+    `/slope-units/..%2Fetc%2Fpasswd`.
+
+    Fourteen need real rows and are skipped when `DATABASE_URL` is
+    absent, so they never fail on Rudra's or Riya's machine. New script
+    `npm run test:db` reads `.env` and runs them. The group's `before`
+    asserts the collection returns 200 and that `features.length > 0` —
+    a reachable but empty database would make every later assertion pass
+    vacuously, which is worse than no test.
+
+    Those fourteen cover: FeatureCollection shape and Polygon type;
+    geometry parsed rather than stringified; coordinates `[lon, lat]` and
+    inside Mizoram; every ring closed and at least 4 positions;
+    `source`/`is_mock` present per feature; `mock_count` counted from the
+    rows and mock rows forcing `is_demo_data` true; `geom` absent from
+    properties; `area_ha` at most 2 dp; coordinates at most 6 dp; stable
+    order across two calls; the single feature identical to its entry in
+    the collection; unknown id 404; unknown district 404 with the id in
+    the message; the pilot district as the default.
+
+    `npm test` -> 27 pass, 0 fail, 1 suite skipped.
+    `npm run test:db` -> 39 pass, 0 fail, 2 skipped (the two 503 tests,
+    correctly, since DATABASE_URL is set).
+
+    Verified by hand through `app.inject()` beyond what the tests
+    assert: all 5 features validated structurally against RFC 7946, with
+    bbox 92.7038 23.7226 -> 92.7440 23.7620, which matches the mock bbox
+    stated in `docs/DEMO_PLAN.md` exactly. And the honesty case run for
+    real: `DEMO_MODE=false` with 5 mock rows loaded still returned
+    `is_demo_data: true`.
+
+**What broke or was learned**
+
+    `?foo=1` returns 200, not 400, despite `additionalProperties: false`
+    on the querystring schema. Fastify's AJV runs with
+    `removeAdditional: true`, so an unknown query parameter is silently
+    stripped and the request succeeds — which also means a typo like
+    `?distrct=aizawl` quietly returns the default district. Left as the
+    framework default and documented in a comment rather than fixed:
+    there is one district in the system, so the wrong answer and the
+    right answer coincide, and a global `removeAdditional: false` would
+    also start rejecting extra fields in V7's ingest body, where
+    tolerance is wanted. Recorded so nobody reads that line as a
+    guarantee it does not give.
+
+    A Fastify response schema SERIALISES as well as documents — any
+    property not listed is stripped from the reply with no error
+    anywhere. Enumerating all 22 feature properties would mean that
+    adding one to `PROPERTIES` and forgetting the schema makes the field
+    vanish from the API silently. So `features.items` is
+    `additionalProperties: true` and the shape is documented in
+    `API_CONTRACT.md` instead.
+
+    Field casing had no documented convention anywhere.
+    `API_CONTRACT.md`'s mock response uses snake_case (`slope_unit_id`,
+    `is_demo_data`, `ward_name`); `routes/meta.js` uses camelCase
+    (`isDemoData`, `uptimeSeconds`). V6 follows snake_case, because that
+    is the contract Riya is already coding against.
+
+    The docs disagree on the path: `API_CONTRACT.md` and `DEMO_PLAN.md`
+    say `/api/v1/slope-units`, while `ARCHITECTURE.md` line 979 and
+    `IMPLEMENTATION_STEPS.md` say
+    `/api/v1/districts/{id}/slope-units`. Implemented the former with
+    `?district=` as a query parameter, since two of the three documents
+    and the frontend contract agree on it. Not resolved in the other two
+    files.
+
+    `properties.slope_unit_id`, not `properties.id`. `id` inside
+    properties reads as "the id of this properties object", and the
+    GeoJSON Feature already has its own `id` member.
+
+**Pending**
+
+    Nothing for V6. Next is checkpoint I1 proper — Riya pointing her
+    React app at this endpoint and rendering the five polygons from the
+    live API. Then V7, `POST /api/v1/ml/forecast`, which takes Rudra's
+    output and must answer 422 rather than Fastify's default 400 on a
+    schema failure.
+
+---

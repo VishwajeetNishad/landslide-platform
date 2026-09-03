@@ -23,6 +23,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { config } from './core/config.js';
 import { closePool, setDbLogger } from './db/pool.js';
 import { registerMetaRoutes } from './routes/meta.js';
+import { registerSlopeUnitRoutes } from './routes/slope_units.js';
 
 export async function buildApp({ logger = true } = {}) {
   const app = Fastify({
@@ -142,6 +143,7 @@ export async function buildApp({ logger = true } = {}) {
 
   // ---------- Routes ----------
   await registerMetaRoutes(app);
+  await registerSlopeUnitRoutes(app);
 
   return app;
 }
