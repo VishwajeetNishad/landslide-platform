@@ -416,3 +416,255 @@ V3.4 container + PostGIS · V3.5 Node connection · V3.6 graceful shutdown
     D:\DockerDesktopWSL). Harmless; delete it if you like.
 
 ---
+
+## V4.1 — migration runner ✅ 2026-09-03
+
+**What was done**
+
+    backend/src/db/migrate.js plus backend/src/db/migrations/, and an
+    `npm run migrate` script. No ORM and no migration library: the schema
+    is mostly PostGIS types, GiST indexes, CHECK constraints and one
+    trigger, and those are exactly the parts an ORM expresses badly or
+    not at all. A numbered .sql file IS the schema — what you read is
+    what the database gets.
+
+    The runner gives five guarantees, each of which is tested below:
+      order      three-digit zero-padded names, plus an explicit numeric
+                 sort because readdir() promises no order at all
+      once only  applied versions are recorded in schema_migrations
+      all or none each migration runs in its own transaction. Postgres
+                 makes DDL transactional, so a migration that fails
+                 halfway leaves nothing behind
+      not edited the sha256 of every applied file is stored; editing an
+                 applied migration stops the next run
+      one runner a session-level advisory lock, so two people running
+                 `npm run migrate` at once cannot both apply 007
+
+    schema_migrations is created directly rather than as migration 000,
+    because we would have to read the table to know whether to create it.
+
+    001_extensions.sql — CREATE EXTENSION IF NOT EXISTS postgis. The
+    Docker image already creates it in the default database, so this is a
+    no-op today; it exists so a fresh or differently named database still
+    ends up correct.
+
+**How it was tested**
+
+    Nine checks, all against the running container:
+
+    1 first run             -> applied 001_extensions.sql in 10 ms
+    2 second run            -> "Schema is up to date", nothing re-applied
+    3 edited applied file   -> REFUSED, printed both checksums, exit 1
+    4 file restored         -> up to date again (so the check is on
+                               content, not on a timestamp)
+    5 file named 7_oops.sql -> REFUSED before touching the database
+    6 two files numbered 001 -> REFUSED (duplicate version)
+    7 999_broken.sql, which creates a table and then contains invalid
+      SQL -> "failed and was rolled back". Verified in psql afterwards:
+      canary table left behind = 0, and 999 was NOT recorded in
+      schema_migrations. This is the all-or-none guarantee proven rather
+      than assumed.
+    8 no DATABASE_URL       -> plain message, exit 1, no stack trace
+    9 npm test              -> 7 pass, 0 fail, 704 ms (nothing else broke)
+
+    Also verified after every run: advisory locks left behind = 0.
+
+**What broke or was learned**
+
+    The checksum normalises \r\n to \n before hashing. Without that, Git
+    on Windows can check a file out with CRLF where Linux gets LF, the
+    identical migration would hash differently on the two machines, and
+    the runner would wrongly accuse an untouched file of having been
+    edited. That would have shown up the first time a teammate ran it.
+
+    The advisory lock has to be taken on ONE dedicated client and held
+    for the whole run. pg_advisory_lock is session-scoped, so taking it
+    on one pooled connection and running the migration on another would
+    hold nothing at all. It is released in a `finally` block before the
+    client goes back to the pool — a session lock abandoned on a pooled
+    connection would block every future migration run until that
+    connection happened to close.
+
+    The pool sets statement_timeout to 15 s, which is right for API
+    queries and wrong for DDL: building a GiST index over real slope
+    units can legitimately take longer. Each migration therefore runs
+    `SET LOCAL statement_timeout = '120s'`, which lasts only until that
+    transaction ends and leaves the API's limit untouched.
+
+    A wrong claim I wrote and corrected: my own comment said the numeric
+    sort stops 010 sorting before 002. With three-digit zero-padding that
+    cannot happen — alphabetical and numeric order are identical. The
+    real reason to sort is that readdir() returns an unspecified order.
+    Fixed the comment rather than leaving a plausible-sounding but false
+    justification in the file.
+
+    An applied migration missing from the repo is a warning, not an
+    error: the schema then contains changes nobody can read, which is
+    worth saying out loud but is not a reason to refuse to run.
+
+**Pending**
+
+    V4.2 — the schema itself (002–006). Trimmed to what the 5 September
+    demo needs.
+
+---
+
+## V4.2 — the schema ✅ 2026-09-03
+
+**What was done**
+
+    Five migrations, 002 to 006, and nine tables:
+      002_reference.sql  district, app_user
+      003_spatial.sql    slope_unit + three indexes
+      004_prediction.sql forecast_run, prediction, runout_envelope, exposure
+      005_alerting.sql   alert
+      006_audit.sql      audit_log + an append-only trigger
+
+    Trimmed for the prototype. Deliberately NOT built: rainfall,
+    soil_moisture, tank_state, field_report, landslide_inventory. Tank
+    state and rainfall arrive inside the model's JSON and are stored as
+    JSONB on prediction, because nothing in the prototype queries them
+    across time — a time-series table would add joins and migrations for
+    no benefit. They stay in docs/ARCHITECTURE.md as design.
+
+    The point of this step is that the project's argument stops being
+    documentation and becomes 38 CHECK constraints. The ones that matter:
+
+      forecast_run  input_cutoff_ts <= run_ts. This is the temporal
+                    leakage guard. A hindcast that claims to have used
+                    data from after it ran cannot be recorded at all.
+      prediction    probability BETWEEN 0 AND 1; the confidence band must
+                    be ordered AND must contain its own point estimate;
+                    valid_to > valid_from; one row per (run, slope unit).
+      prediction    risk_level is a separate NULLABLE column, not a view
+                    over probability. NULL means "exposure not yet
+                    computed" — exposure cannot be computed before the
+                    prediction row exists, so risk_level is filled in by
+                    an UPDATE in the same transaction.
+      prediction    verification_status DEFAULT 'PENDING_VERIFICATION',
+                    and it cannot leave that state without both a named
+                    verifier and a timestamp. Nothing self-confirms.
+      runout        source_citation NOT NULL *and* checked for blankness.
+      exposure      a population figure requires a population_source;
+                    zero is exempt, because "nobody is exposed" is a
+                    finding rather than an estimate, and the AZ-1088 case
+                    depends on being able to record exactly that.
+      alert         status <> 'DISPATCHED' OR authorised_by IS NOT NULL.
+                    The authorisation gate. Plus: authoriser and
+                    timestamp must both be present or both absent, a
+                    rejection must carry a reason, and an alert cannot be
+                    both authorised and rejected.
+      slope_unit    source NOT NULL and is_mock NOT NULL — per-row
+                    provenance, so no geometry enters the table
+                    anonymously. Same idea as forecast_run.is_demo_data.
+                    Per-row rather than one global DEMO_MODE switch,
+                    because a global flag can be turned off while mock
+                    rows are still present, and then illustrative values
+                    are presented as real with no banner.
+
+    Two smaller decisions worth recording. slope_unit.geom is typed
+    GEOMETRY(POLYGON, 4326), so a wrongly projected geometry is refused
+    by the database rather than silently stored — V3 measured the same
+    road segment as 1019.2 m in EPSG:32646 and 0.01 in 4326, with no
+    error raised, so this is a real failure mode. And district.geom is
+    nullable and left NULL: we have no authoritative Aizawl boundary, and
+    hand-drawing an administrative boundary would be fabricating
+    geographic data. The column waits for a real boundary and a citation.
+
+**How it was tested**
+
+    All five migrations applied cleanly (110/33/39/15/19 ms), then a
+    second run reported "up to date" — 6 migrations, nothing re-applied.
+
+    backend/src/db/schema_constraints_test.sql — 32 assertions run inside
+    a transaction that ROLLBACKs at the end. Each case is a mistake a
+    reasonable person would actually make.
+
+      25 must be REJECTED, all rejected:
+         cutoff after run (leakage); probability 1.5; probability 72
+         (the percentage bug); inverted band 0.8..0.5; band 0.1..0.5
+         around an estimate of 0.9; valid_to before valid_from;
+         risk_level 'CRITICAL'; CONFIRMED with no verifier; CONFIRMED
+         with a verifier but no timestamp; duplicate (run, unit); orphan
+         slope_unit_id; runout with NULL citation; runout with a blank
+         citation; population 120 with no source; buildings_count -1;
+         DISPATCHED with no authoriser; DISPATCHED with no dispatch time;
+         authoriser with no timestamp; REJECTED with no reason; blank
+         slope_unit source; geometry in SRID 32646 instead of 4326;
+         audit_log UPDATE; audit_log DELETE; audit_log DELETE matching
+         zero rows; audit_log TRUNCATE.
+
+      7 must be ACCEPTED, all accepted:
+         risk_level NULL; population 0 with no source (the AZ-1088
+         case); CONFIRMED with a named verifier and timestamp;
+         probability 0.95 with risk_level LOW; a DRAFT alert with no
+         authoriser (a machine may draft); DISPATCHED once a named human
+         authorised it; audit_log INSERT.
+
+    After the rollback: 0 rows in prediction, 0 slope_units, 0 app_users,
+    1 district (the seeded Aizawl row). npm test -> 7 pass, 0 fail.
+
+**What broke or was learned**
+
+    REVOKE UPDATE, DELETE on audit_log is the textbook answer and it does
+    not work here. Our application connects as the database owner, and
+    PostgreSQL skips privilege checks entirely for owners and superusers,
+    so the REVOKE would have been silently ineffective — we would have
+    been claiming a guarantee we did not have. A trigger cannot be
+    bypassed by anyone, including a superuser in psql, and it fails with
+    a message that explains itself. Creating a separate unprivileged
+    application role is the proper long-term fix and is deferred.
+
+    The trigger is FOR EACH STATEMENT, not FOR EACH ROW. A row-level
+    trigger only fires for rows that match, so
+    `DELETE FROM audit_log WHERE id = 999999` would have succeeded
+    silently when no such row existed — reporting success for an
+    operation we had forbidden. Verified: the statement-level version
+    refuses even a DELETE that matches nothing.
+
+    TRUNCATE does not fire UPDATE or DELETE triggers at all. Without a
+    third BEFORE TRUNCATE trigger, one statement would have emptied the
+    entire audit log while the other two triggers looked like they were
+    protecting it. This is the hole a determined person would find first,
+    and it is now closed and tested.
+
+    NOT NULL is not enough for a citation. An empty string satisfies NOT
+    NULL perfectly, so runout_envelope.source_citation and
+    slope_unit.source also check btrim(...) <> ''.
+
+    The confidence band needed two constraints, not one. Ordered
+    (lower <= upper) was obvious; "the band must contain its own point
+    estimate" was not, and its absence is worse — a band of 0.1 to 0.5
+    around an estimate of 0.9 looks like honest uncertainty while being
+    arithmetically impossible.
+
+    risk_level has to be nullable, which was not the original plan.
+    ARCHITECTURE.md had it NOT NULL, but exposure references prediction,
+    so the prediction row must exist before exposure can be computed. The
+    honest resolution is NULL meaning "exposure not yet computed", filled
+    in by an UPDATE inside the same transaction. A NOT NULL column would
+    have forced a placeholder risk level to be written first, and a
+    placeholder risk level is exactly the kind of value that survives
+    into a dashboard.
+
+    docs/ARCHITECTURE.md §19 now opens with a note saying which tables
+    the prototype builds and that the migration files, not that section,
+    are the source of truth. Rudra and Riya read that document; a schema
+    listing tables that do not exist is an integration failure waiting to
+    happen.
+
+**Pending**
+
+    A separate unprivileged database role, so REVOKE also applies and the
+    trigger is defence in depth rather than the only defence. Deferred:
+    it needs a second credential in .env for all three developers.
+
+    No triggers or constraints yet enforce that risk_level may only be
+    set once an exposure row exists. That is a cross-table rule, so a
+    CHECK cannot express it; for now the transaction in the ingest
+    endpoint is what guarantees it. Noted rather than built.
+
+    V5 — load data/sample/mock_slope_units.geojson into slope_unit,
+    with source and is_mock set honestly.
+
+---
