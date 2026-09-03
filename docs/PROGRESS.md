@@ -9,6 +9,14 @@ Every entry has the same four sections:
 The full list of steps is in `docs/IMPLEMENTATION_STEPS.md`
 (V0–V14 backend, R1–R8 ML, F1–F8 frontend).
 
+**Rudra's (R*) and Riya's (F*) steps get an entry here too**, written when
+their branch is merged, in the same four sections. The entry records what was
+reviewed and what could **not** be verified locally — if a script could not be
+run here because its input data is gitignored, that is stated rather than
+implied. What was flagged back to them is listed under *Pending* with the step
+it belongs to, so nothing raised in a merge commit lives only in the merge
+commit.
+
 ---
 
 ## V0 — Python 3.11 environment ✅ 2026-09-02
@@ -952,6 +960,86 @@ V3.4 container + PostGIS · V3.5 Node connection · V3.6 graceful shutdown
     live API. Then V7, `POST /api/v1/ml/forecast`, which takes Rudra's
     output and must answer 422 rather than Fastify's default 400 on a
     schema failure.
+
+---
+
+## R2 — DEM slope, aspect and curvature (Rudra) ✅ 2026-09-04
+
+Merged, not written here. Branch `r2-dem-terrain`, one commit `5c86ebb`
+by `rudevermzzz`, merged as `568887e`.
+
+**What was done**
+
+    `ml/terrain/terrain_metrics.py`, 68 lines. Reads
+    `data/dem/output_hh.tif` with rasterio and writes three float32
+    GeoTIFFs beside it — `slope.tif`, `aspect.tif`, `curvature.tif` —
+    then prints the min and max of each.
+
+    Slope comes from `np.gradient` and `arctan`, aspect from
+    `arctan2(-dz_dx, dz_dy)` normalised to 0–360, curvature from the sum
+    of the two second derivatives. The cell size is converted from
+    degrees to metres using 111320 m per degree of latitude and
+    `111320 * cos(lat)` for longitude, with the latitude taken from the
+    middle of the raster.
+
+    Scope is exactly R2: only `ml/`, nothing under `backend/`, and no
+    raster committed. `git merge-tree` was clean against main.
+
+**How it was tested**
+
+    Not executed here, and that is worth stating plainly rather than
+    glossing: `data/dem/` does not exist on this machine and both
+    `data/*` and `*.tif` are gitignored — correctly, a DEM has no
+    business in git history. So this was reviewed by reading, and by
+    checking it against `004_prediction.sql`'s constraints and against
+    what V5's loader will require.
+
+    Verified that nothing in `backend/` changed, that no `.tif` entered
+    the tree, and that the backend suite still passes after the merge
+    (27 pass at that point).
+
+    Rudra's own evidence is the printed min/max ranges. Those are the
+    right thing to print, since a slope raster whose maximum is 0.9
+    rather than ~60 means the degree-to-metre conversion silently
+    misfired.
+
+**What broke or was learned**
+
+    Three things flagged back for R3, all recorded in the merge commit
+    and sent to Rudra:
+
+    Aspect must not be stored, aggregated or fed to a model as degrees.
+    359° and 1° are the same direction but 358 apart numerically, so
+    averaging them gives 180° — the exact opposite direction — and a
+    tree model would split on a discontinuity that is not there. It has
+    to become `sin(aspect)` and `cos(aspect)`, and the aggregation to
+    slope-unit level has to average those two rather than the degrees.
+
+    Slope unit attributes must come from the same WhiteboxTools chain
+    that produced the polygons. If the polygons come from one source and
+    `mean_slope_deg` from a separately-gridded raster, geometry and
+    attributes disagree inside a single row — which is the V5 `area_ha`
+    problem again, and that one at least was catchable by recomputing
+    the area.
+
+    `nodata=-9999` is written into the profile but never applied to the
+    arrays, and `arctan2` can leave NaN. So a nodata cell reaches the
+    output as whatever `np.gradient` made of it, and
+    `mean_slope_deg BETWEEN 0 AND 90` will reject the file at load time
+    with nothing pointing at the cause.
+
+**Pending**
+
+    For Rudra, before R3 lands:
+
+    Aspect as sin/cos, at both raster and slope-unit level.
+
+    A `_provenance` block in the slope unit file — `npm run
+    load:slope-units` refuses the file without it.
+
+    The source and licence of `output_hh.tif`, for attribution. Not
+    optional: an unattributed DEM is one of the things a judge asks
+    about directly.
 
 ---
 

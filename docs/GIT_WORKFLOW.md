@@ -158,6 +158,28 @@ git pull origin main
 git branch -d v3-postgis-docker
 ```
 
+### 4.5 Merge ke baad `docs/PROGRESS.md` mein entry — CHHODNA NAHI
+
+Ye sirf mere (Vishwajeet ke) apne step ke liye nahi hai. **Rudra ya Riya ka
+branch merge karte waqt bhi wahi entry banti hai**, usi chaar section mein:
+`What was done · How it was tested · What broke or was learned · Pending`.
+
+Do cheezein khaas dhyaan se:
+
+- **Jo local verify NAHI ho paaya, woh likhna hai.** Jaise R2 — script yahan
+  chala hi nahi sakta tha, kyunki `data/dem/` is machine par nahi hai aur
+  `*.tif` gitignored hai (theek hai, DEM git mein nahi jaana chahiye). Toh
+  entry mein saaf likha hai "not executed here, reviewed by reading". Isko
+  chhupa dena aage jhoothi confidence banata hai.
+- **Jo unko flag kiya woh `Pending` mein aayega**, us step ke naam ke saath.
+  Warna woh baat sirf merge commit message mein reh jaati hai, aur merge
+  commit koi dobara nahi padhta.
+
+Kyun ye zaruri hai: PROGRESS.md hi ek jagah hai jahan **poori team ka** kaam
+tareekh ke hisaab se likha hai. Demo se pehle "kya ban gaya, kya baaki hai"
+yahin se padha jaayega, aur judge ke "aapne isko verify kaise kiya" wale
+sawaal ka jawaab bhi yahin hai.
+
 ---
 
 ## 5. Pull Request (PR) kya hai, aur hum kyun use karenge
