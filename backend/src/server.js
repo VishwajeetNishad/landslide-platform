@@ -24,11 +24,48 @@ const app = await buildApp();
 // Is project mein ye zyada matter karta hai -- V13 mein alert dispatch
 // hoga. Alert dispatch ke beech mein process marna = audit log adhoora
 // = kisne alert bheja pata nahi chalega. Woh accept nahi kar sakte.
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, async () => {
-    app.log.info(`${signal} mila -- shaanti se band kar raha hoon`);
+let shuttingDown = false;
+
+async function shutdown(signal) {
+  // Pressing Ctrl+C twice, or a supervisor sending SIGTERM followed by
+  // SIGINT, would otherwise run this whole function twice and close the
+  // database pool underneath itself.
+  if (shuttingDown) {
+    app.log.warn(`${signal} received again -- already shutting down`);
+    return;
+  }
+  shuttingDown = true;
+
+  app.log.info(`${signal} received -- shutting down gracefully`);
+
+  // A hard deadline. app.close() waits for in-flight requests to finish,
+  // and a genuinely stuck request would otherwise hang the process
+  // forever -- which just moves the problem instead of fixing it.
+  // Docker's own patience is 10 s before it sends SIGKILL, so we exit
+  // first and stay in control of the outcome.
+  const forceTimer = setTimeout(() => {
+    app.log.error('Graceful shutdown timed out after 8s -- forcing exit');
+    process.exit(1);
+  }, 8_000);
+  forceTimer.unref(); // this timer must not itself keep the process alive
+
+  try {
     await app.close();
+    clearTimeout(forceTimer);
+    app.log.info('Shutdown complete');
     process.exit(0);
+  } catch (err) {
+    clearTimeout(forceTimer);
+    app.log.error({ err }, 'Error during shutdown');
+    process.exit(1);
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    // Deliberately not awaited: a signal handler cannot be awaited by
+    // anyone, and marking it async only hides rejections.
+    void shutdown(signal);
   });
 }
 
@@ -36,7 +73,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // Bina iske "unhandled rejection" chup-chaap gayab ho jaata hai ya
 // aadha-adhoora stack trace deta hai. Ye poora likhta hai.
 process.on('unhandledRejection', (err) => {
-  app.log.error({ err }, 'Unhandled promise rejection -- band kar raha hoon');
+  app.log.error({ err }, 'Unhandled promise rejection -- shutting down');
   process.exit(1);
 });
 
@@ -53,9 +90,9 @@ try {
   // chal raha hai toh chalane wale ko pata hona chahiye -- sirf
   // frontend banner par bharosa nahi karna.
   if (config.demoMode) {
-    app.log.warn('DEMO_MODE=true -- API illustrative values bhej raha hai, asli forecast nahi');
+    app.log.warn('DEMO_MODE=true -- the API is returning illustrative values, not real forecasts');
   }
 } catch (err) {
-  app.log.error({ err }, 'Server start nahi hua');
+  app.log.error({ err }, 'Server failed to start');
   process.exit(1);
 }

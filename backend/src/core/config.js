@@ -46,10 +46,22 @@ export const config = {
   // ko real bolkar present kar dena" nahi honi chahiye.
   demoMode: toBool(process.env.DEMO_MODE, true),
 
-  // ---------- Database (V3/V4 mein use hoga) ----------
-  databaseUrl:
-    process.env.DATABASE_URL ??
-    'postgresql://landslide:change_me_locally@localhost:5432/landslide',
+  // ---------- Database ----------
+  // Yahan koi fallback URL JAAN-BOOJH KAR nahi hai. Pehle
+  // 'postgresql://landslide:change_me_locally@localhost:5432/landslide'
+  // likha hua tha. Do wajah se hataya:
+  //
+  //   1. Source code mein ek fake credential pada rehta tha. Kisi din
+  //      woh kisi ki asli password ban jaata.
+  //   2. Fallback hone se `databaseUrl` KABHI khaali nahi hota, toh
+  //      /health "not_configured" bol hi nahi sakta tha -- woh state
+  //      pahunch se bahar thi. Ab null aata hai aur /health sach bolta hai.
+  //
+  // DATABASE_URL `.env` se aata hai (`npm run dev` usko --env-file se
+  // padhta hai). Test `--env-file` ke bina chalte hain, isliye unme ye
+  // null rehta hai -- aur wahi test karta hai ki DB na hone par API
+  // jhootha "ok" nahi bolti.
+  databaseUrl: process.env.DATABASE_URL ?? null,
 
   // ---------- Pilot region ----------
   pilotDistrictId: process.env.PILOT_DISTRICT_ID ?? 'aizawl',

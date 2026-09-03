@@ -173,11 +173,29 @@ the wrong Python and GDAL warnings.
 
 ### 4. Start the database
 
-`docker-compose.yml` is added in step **V3**; this command does not work yet.
+Docker Desktop must be running first — installing it does not start the engine.
+Then, from the repository root:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and replace `change_me_locally` with a real password (in both
+`POSTGRES_PASSWORD` and `DATABASE_URL`). `.env` is gitignored and must never be
+committed. Then:
 
 ```bash
 docker compose up -d
 ```
+
+Only the database runs in Docker; Node and Vite run on the host. Verify:
+
+```bash
+docker compose exec db psql -U landslide -d landslide -c "SELECT PostGIS_Version();"
+```
+
+`docker compose down` stops the container and **keeps** the data.
+`docker compose down -v` deletes the data volume as well.
 
 ---
 
@@ -212,6 +230,7 @@ landslide-platform/
 | File | What is in it |
 |---|---|
 | [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) | **Start here.** Setup, folder ownership, and the exact first commands for Rudra and Riya |
+| [docs/DEMO_PLAN.md](docs/DEMO_PLAN.md) | Two-day plan for the 5 September prototype demo — what is built, what is deliberately not, and how to say so |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system design, tech-stack rationale, DB schema, evaluation method |
 | [docs/IMPLEMENTATION_STEPS.md](docs/IMPLEMENTATION_STEPS.md) | Step-by-step build plan (V0–V14, R1–R8, F1–F8) |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | What is actually finished, how it was tested, what broke |

@@ -1,0 +1,73 @@
+# Landslide Platform — local development database
+#
+# Only the database runs in Docker. Node (backend) and Vite (frontend) run on
+# the host, because file-watching across the Windows <-> Linux VM boundary is
+# slow. A database does no file-watching, so it containerises cleanly.
+#
+# Usage:
+#   cp .env.example .env      # then set a real POSTGRES_PASSWORD
+#   docker compose up -d
+#   docker compose ps
+#   docker compose down       # stops containers, KEEPS data (named volume)
+#   docker compose down -v    # stops containers and DELETES all data
+
+name: landslide
+
+services:
+  db:
+    # PostGIS is an extension that lives inside PostgreSQL — it cannot run on
+    # its own. This official image ships PostgreSQL 16 with PostGIS 3.4 already
+    # compiled and version-matched, which removes a whole class of setup errors.
+    # The tag is pinned: "latest" would silently change PostgreSQL major version
+    # between machines and break the data directory.
+    image: postgis/postgis:16-3.4
+    container_name: landslide-db
+    restart: unless-stopped
+
+    environment:
+      # ${VAR:?message} = fail immediately with that message if VAR is missing.
+      # This is deliberate: a default password here would end up being the real
+      # password on someone's machine. No secret is written in this file.
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER missing — copy .env.example to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing — copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB missing — copy .env.example to .env}
+      # Deterministic collation, so ORDER BY and index behaviour are identical
+      # on all three developers' machines.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+
+    ports:
+      # Bound to 127.0.0.1 on purpose. Without the prefix Docker publishes the
+      # port on every network interface, which puts the database on the hostel
+      # or venue WiFi. Only this laptop needs to reach it.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      # Named volume, not a bind mount. Survives `docker compose down` and
+      # avoids Windows filesystem permission problems inside the container.
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      # PostgreSQL accepts connections briefly during initialisation and then
+      # restarts, so "container is running" does not mean "database is ready".
+      # Migrations (V4) and the backend must wait for this check, not for start.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+    # Default shared memory in a container is 64 MB. PostGIS spatial joins and
+    # parallel workers use shared memory for hash tables; 64 MB is enough for
+    # Aizawl-scale data but leaves no headroom, and the failure is an opaque
+    # "could not resize shared memory segment" mid-query.
+    shm_size: 256mb
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
+    name: landslide_pgdata
