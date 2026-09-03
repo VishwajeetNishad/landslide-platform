@@ -668,3 +668,131 @@ V3.4 container + PostGIS · V3.5 Node connection · V3.6 graceful shutdown
     with source and is_mock set honestly.
 
 ---
+
+## V5 — loading slope units ✅ 2026-09-03
+
+**What was done**
+
+    `backend/src/ingest/load_slope_units.js`, run with
+    `npm run load:slope-units`, loads a GeoJSON FeatureCollection into
+    `slope_unit`. It takes an optional path argument, so the same loader
+    will take Rudra's real DEM-derived file when it arrives:
+    `npm run load:slope-units -- ../path/to/real.geojson`.
+
+    A loader and not a seed migration. Migration 002 seeds the district
+    row because 'aizawl' / 'Aizawl' / 'Mizoram' will never change. Slope
+    units are the opposite — today's file is hand-drawn mock geometry and
+    R3 will replace it. Data that is expected to be replaced does not
+    belong in the schema history: a migration cannot be re-run, so we
+    would have had to invent a migration whose only job was to undo the
+    previous one's data.
+
+    Provenance is read from the FILE, never from this code. The GeoJSON
+    now carries a `_provenance` block stating `source` and `is_mock`, and
+    there is no default for either. The tempting shortcut was
+    `is_mock: true` hardcoded in the loader, since today's file is mock.
+    That breaks the day the real file arrives: whoever loads it gets real
+    slope units flagged as mock, sees the demo banner, and "fixes" it by
+    flipping the constant — at which point mock files load as real too.
+    Defaulting the other way is worse, because a file with no provenance
+    would silently become real data. `is_mock` must be a genuine boolean;
+    the string `"false"` is refused rather than coerced, because it is
+    truthy in JavaScript and would have marked mock data as real.
+
+    All or none. Every feature is parsed before the transaction opens, so
+    a file with a typo in feature 5 is rejected without the database
+    being touched at all. The inserts then run in one transaction, so a
+    row rejected by a constraint rolls the whole file back. A partly
+    loaded set of slope units would put polygons on the map with no
+    predictions behind them.
+
+    Re-runnable, via `ON CONFLICT (id) DO UPDATE`. Loading the same file
+    twice is a no-op instead of a primary key error, and loading a
+    corrected file updates the rows in place. `(xmax = 0)` in RETURNING
+    is how the loader tells an insert from an update, since RETURNING
+    looks identical otherwise.
+
+    Migration `007_slope_unit_ward.sql` adds `slope_unit.ward_name`,
+    which 003 had missed. A new numbered file rather than an edit to 003:
+    003 is already applied and its checksum is stored, so editing it
+    would have worked on my machine and failed on Rudra's and Riya's.
+    Nullable on purpose — a DEM-delineated hillslope does not necessarily
+    sit inside exactly one named ward, and NULL is a truthful answer where
+    'Unknown' would be rendered on a map as if it were a place.
+
+    `backend/test/load_slope_units.test.js` — 16 tests over the pure
+    functions, no database and no network, so they run whether or not
+    Docker is up. They cover the provenance refusals specifically, because
+    provenance is the one rule the database cannot enforce for us: by the
+    time a row reaches Postgres, `source` and `is_mock` are already
+    decided, and the column can only insist they are present, not that
+    they are true.
+
+**How it was tested**
+
+    Happy path: 5 inserted, 0 updated. Re-run: 0 inserted, 5 updated
+    (idempotent). All five rows verified in psql as SRID 4326,
+    `ST_GeometryType` = ST_Polygon, `ST_IsValid` = true, and
+    `ST_Contains(geom, centroid)` = true.
+
+    Eight rejection cases, each with exit code 1 and no stack trace:
+    no `_provenance` block; `is_mock` as the string "false"; a blank
+    `source`; a duplicate id inside one file; a `district_id` that does
+    not exist (caught by the foreign key); `mean_slope_deg` 95 (caught by
+    `slope_unit_slope_range`); a LineString where a Polygon belongs
+    ("Geometry type (LineString) does not match column type (Polygon)");
+    and a missing `properties.id`, which names the feature index rather
+    than becoming "null value in column id".
+
+    All-or-none proven, not assumed. The bad-slope fixture also renamed
+    feature 0 to a new id, `AZ-NEWROW`, so a successful insert happened
+    before the failure. After the run: `AZ-NEWROW` rows = 0, total slope
+    units still 5, and `AZ-1088.mean_slope_deg` still 41.6.
+
+    The `is_mock: false` path was exercised too, with a fixture claiming
+    a CartoDEM source. It loaded, the row read `is_mock = f`, and the
+    loader's last line changed to "loaded as real data." The mock file was
+    then re-loaded to restore the honest state, and the fixtures deleted —
+    final count 5 units, 5 mock, 0 real.
+
+    `npm test` → 23 pass, 0 fail, 548 ms. `npm run migrate` → up to date,
+    7 migrations applied.
+
+**What broke or was learned**
+
+    The mock file's own `area_ha` figures do not describe its own
+    polygons. This was found by comparing the two after the first load:
+    every one of the five was out by between 135% and 224%. AZ-1147 says
+    5.1 ha and its polygon measures 16.5 ha. The properties in a
+    hand-drawn file were written independently of the coordinates, so they
+    simply describe different shapes.
+
+    So `area_ha` is now MEASURED from the geometry in SQL —
+    `ST_Area(ST_Transform(geom, 32646)) / 10000` — and the file's figure is
+    never stored. Storing it would have put a quantity in the database
+    that contradicts the geometry sitting next to it in the same row, and
+    area feeds exposure, which feeds risk. The loader still reports every
+    disagreement above 5% on stdout, because that tells Rudra his
+    attributes and his coordinates were written independently, which is
+    worth knowing before those attributes feed a model. Same reasoning
+    applies to `centroid`, which is derived rather than read: a
+    file-supplied centroid could disagree with its own polygon, and then
+    the map pin and the map shape would point at different hillsides.
+
+    003 was missing `ward_name` and the loader found it — "column
+    ward_name of relation slope_unit does not exist". Worth recording as
+    the checksum guard doing its job: the fix had to be migration 007, not
+    an edit to 003.
+
+    The loader needed an `import.meta.url` guard before the test file
+    could import it. Without it, `npm test` would have run `main()` and
+    tried to load slope units into whatever database happened to be
+    configured.
+
+**Pending**
+
+    Nothing for V5. Next is V6 — `GET /api/v1/slope-units`, serving these
+    five rows as GeoJSON via `ST_AsGeoJSON`, which is checkpoint I1 and
+    the first thing Riya can draw on a map.
+
+---
