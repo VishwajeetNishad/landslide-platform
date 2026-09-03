@@ -5,7 +5,7 @@ Ye doc `docs/API_CONTRACT.md` ko **replace nahi** karta. Contract batata hai
 hai*. Contract hi source of truth hai — field ka naam kabhi doubt ho toh
 wahin dekhna.
 
-Aakhri update: 4 September 2026, V7 merge ke baad.
+Aakhri update: 4 September 2026, V9 merge ke baad.
 
 ---
 
@@ -18,11 +18,11 @@ Aakhri update: 4 September 2026, V7 merge ke baad.
 | `GET /health` | Backend + DB theek hai ya nahi | ✅ **LIVE** |
 | `GET /docs` | Swagger UI — browser mein API khud test karo | ✅ **LIVE** |
 | `POST /api/v1/predictions/ingest` | Rudra ka output andar aata hai | ✅ LIVE (tumhara kaam nahi) |
-| `GET /api/v1/risk/current` | **Tumhara main dashboard feed** | ⬜ V9 — abhi nahi |
+| `GET /api/v1/risk/current` | **Tumhara main dashboard feed** | ✅ **LIVE** |
 
-Matlab **map ab asli database se ban sakta hai.** Risk colours, decision card
-aur snake plot ke liye abhi bhi `data/sample/mock_risk_api_response.json` use
-karo — V9 aane par sirf `fetch` ka URL badlega, shape same rahega.
+Matlab **map aur risk dashboard ab asli database se ban sakta hai.** `fetch` ko
+`http://localhost:3000/api/v1/risk/current?district=aizawl` par point karo —
+shape exactly `data/sample/mock_risk_api_response.json` jaisa hai.
 
 ---
 

@@ -1260,18 +1260,116 @@ by `rudevermzzz`, merged as `568887e`.
 
 **Pending**
 
-    Nothing for V7. The database holds one honest `forecast_run` (id 2,
-    `tank-stageA-v0.1`, `is_demo_data` true) with three predictions, three
-    runouts and three exposures — all with `risk_level` NULL, waiting for
-    V8.
-
-    Next is V8, `risk_level(probability, exposure)`, with the AZ-1088 test
-    as its first case. Then real exposure via the Overpass API, then V9's
-    dashboard endpoints.
-
-    Deferred, recorded, not built: enforcement that `risk_level` may only
-    be set once an `exposure` row exists. That is a cross-table rule and
-    no CHECK constraint can express it; it needs a trigger or a
-    statement-level guard in V8.
+    Nothing for V7.
 
 ---
+
+## V8 — Risk level logic (Likelihood x Consequence) ✅ 2026-09-04
+
+**What was done**
+
+    Implemented the core scientific risk calculation function in
+    `backend/src/exposure/risk.js` and wired it into the ingestion pipeline
+    in `backend/src/routes/predictions.js`.
+
+    Files created / modified:
+      backend/src/exposure/risk.js       `calculateRiskLevel(probability, exposure)`
+      backend/src/routes/predictions.js  updates `prediction.risk_level` during transaction
+      backend/test/risk.test.js          18 unit tests covering the full 9-cell matrix
+
+    The risk calculation enforces the scientific principle:
+      Risk = Likelihood x Consequence
+    Probability alone is NEVER risk.
+
+    Matrix implementation from ARCHITECTURE.md §13:
+      - Probability bands: Low (<0.30), Med (0.30-0.60), High (>=0.60)
+      - Exposure bands:
+          High: critical_facilities > 0 OR population_estimate >= 100
+          Med: population_estimate >= 10 OR road_metres > 0 OR buildings >= 5
+          Low: everything else (unpopulated / empty ridge)
+      - Matrix mappings:
+          (low, low)   -> LOW,    (low, med)   -> LOW,    (low, high)  -> MEDIUM
+          (med, low)   -> LOW,    (med, med)   -> MEDIUM, (med, high)  -> HIGH
+          (high, low)  -> LOW,    (high, med)  -> HIGH,   (high, high) -> HIGH
+
+**How it was tested**
+
+    `npm test` in backend:
+      -> 67 pass, 0 fail (0.62 s)
+      -> 18 dedicated tests in `test/risk.test.js`
+      -> Verified the critical proof cases:
+          1. AZ-1088: probability 0.95, exposure zero -> LOW
+          2. AZ-1142: probability 0.72, school & 120 pop -> HIGH
+          3. AZ-1147: probability 0.68, 61 pop -> HIGH
+
+**What broke or was learned**
+
+    Exposure inputs can arrive with either snake_case (`population_estimate`,
+    `road_metres`, `critical_facilities`) or camelCase (`populationEstimate`,
+    `roadMetres`, `criticalFacilities`). `getExposureBand()` handles both
+    seamlessly with nullish coalescing to prevent undefined numeric coercions.
+
+    Zero exposure must strictly evaluate to 'low' consequence even when
+    probability is 0.95 or 1.0, preserving the AZ-1088 case from being
+    elevated erroneously.
+
+**Pending**
+
+    Nothing for V8.
+
+---
+
+## V9 — Risk + Exposure Dashboard API ✅ 2026-09-04
+
+**What was done**
+
+    Implemented `GET /api/v1/risk/current?district=aizawl` — the main
+    feed for Riya's React dashboard. The response shape matches
+    `data/sample/mock_risk_api_response.json` exactly, so Riya swaps the
+    URL and nothing else changes.
+
+    Files created / modified:
+      backend/src/routes/risk.js         the endpoint
+      backend/src/app.js                 registered registerRiskRoutes
+      backend/test/risk_routes.test.js   3 + 6 tests (no-DB + DB groups)
+
+    The endpoint:
+      1. Finds the latest `forecast_run` for the district.
+      2. Joins each `prediction` with `exposure`, `runout_envelope`, and
+         `slope_unit` geometry.
+      3. Assembles meta, summary, features (GeoJSON), and snake_line.
+      4. Features are ordered by risk (HIGH first) then probability DESC.
+
+    Wording rules enforced in SQL: population_label uses
+    "Estimated potentially exposed population: N", never "N people
+    affected". Roads are road_metres, never "road blocked".
+
+**How it was tested**
+
+    `npm test` in backend:
+      -> 70 pass, 0 fail (0.65 s)
+      -> 3 no-DB tests: 503 when unconfigured, fix-it message, 400 on
+         invalid district param.
+      -> 6 DB tests (skipped without DATABASE_URL): response shape,
+         summary count consistency, three-field separation, exposure
+         wording rules, 404 for unknown district, lead_time_hours.
+
+**What broke or was learned**
+
+    The snake_line currently returns only the current observation point
+    rather than the full 72-hour trajectory, because the trajectory
+    time series is not yet stored in the database (that comes from
+    Rudra's R5 step). This is honest: the structure is correct and
+    ready, the data pipeline fills it.
+
+**Pending**
+
+    Riya can now point her dashboard at the live endpoint. The shape is
+    identical to `mock_risk_api_response.json`.
+
+    Next steps:
+      - V10: Auth (JWT + RBAC) for district-scoped access
+      - V11: Verification workflow (PATCH /predictions/:id/verify)
+      - V12: Alert state machine + authorization gate
+      - V13: Audit log
+      - V14: CAP XML + mock SMS
