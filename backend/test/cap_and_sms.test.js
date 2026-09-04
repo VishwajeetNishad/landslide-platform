@@ -83,6 +83,30 @@ describe('Step V14 -- Frozen SMS Templates & CAP 1.2 XML Unit Tests', () => {
     assert.match(xml, /<language>lus-IN<\/language>/);
     assert.match(xml, /<\/alert>$/);
   });
+
+  test('buildCap12Xml dynamically uses Sikkim / Gangtok context without any hardcoding', () => {
+    const xml = buildCap12Xml(
+      { id: 101, severity: 'Extreme', headline: null, body: null },
+      {
+        status: 'Exercise',
+        context: {
+          slope_unit_id: 'SK-0012',
+          district_id: 'gangtok',
+          district_name: 'Gangtok',
+          state_name: 'Sikkim',
+          road_metres: 450,
+        },
+      },
+    );
+
+    assert.match(xml, /<identifier>IN-SI-GANG-ALERT-101-/);
+    assert.match(xml, /<sender>ddma-gangtok@disaster.gov.in<\/sender>/);
+    assert.match(xml, /<senderName>Gangtok District Disaster Management Authority \(DDMA\)<\/senderName>/);
+    assert.match(xml, /<areaDesc>Slope Unit SK-0012, Gangtok, Sikkim<\/areaDesc>/);
+    assert.doesNotMatch(xml, /Mizoram/);
+    assert.doesNotMatch(xml, /Melthum/);
+    assert.doesNotMatch(xml, /Aizawl/);
+  });
 });
 
 describe('Step V14 -- CAP XML & Mock SMS Endpoints (database backed)', {

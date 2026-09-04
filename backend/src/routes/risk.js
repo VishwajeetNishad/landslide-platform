@@ -239,6 +239,8 @@ function buildSnakeLine(rows) {
     slope_unit_id: props.slope_unit_id,
     x_label: 'Short-term rainfall, last 3 h (mm)',
     y_label: 'Soil water index (mm)',
+    is_illustrative_curve: true,
+    curve_source: 'Stage A empirical threshold (ARCHITECTURE §12.3)',
     critical_curve: [
       { x: 0, y: 190 },
       { x: 10, y: 168 },

@@ -6,11 +6,10 @@
  * Standards-compliant XML generator for integration with India's national
  * emergency alert pipeline (SACHET / NDMA).
  *
- * Conforms strictly to OASIS CAP v1.2 specification:
- * - Namespace: urn:oasis:names:tc:emergency:cap:1.2
- * - Safe status flag: 'Exercise' for prototype demonstrations
- * - Coordinates formatted as "lat,lon lat,lon ..." (note: lat first in CAP standard)
- * - Multi-lingual <info> blocks for English (en-IN), Hindi (hi-IN), and Mizo (lus-IN)
+ * ZERO HARDCODING:
+ * - Jurisdictions, state names, districts, sender authorities, and coordinate bounds
+ *   are dynamically resolved from the database.
+ * - Coordinates are converted from GeoJSON [lon, lat] to standard CAP "lat,lon" sequence.
  */
 
 import { renderSmsTemplates } from './templates.js';
@@ -52,19 +51,19 @@ export function geoJsonPolygonToCap(geom) {
 }
 
 /**
- * Build a valid CAP 1.2 XML document string.
+ * Build a valid CAP 1.2 XML document string with dynamic parameters.
  *
  * @param {Object} alert - Database alert record
  * @param {Object} [options]
  * @param {string} [options.status='Exercise'] - 'Exercise' (demo safety) or 'Actual'
- * @param {string} [options.sender] - Sender URI / authority
+ * @param {string} [options.sender] - Custom sender URI / authority
  * @param {Object} [options.geometry] - GeoJSON Polygon of the affected slope unit / runout
- * @param {Object} [options.context] - Additional hazard context (ward, district, probability, etc.)
+ * @param {Object} [options.context] - Dynamic hazard context from DB (district, state, ward, etc.)
  * @returns {string} Fully-formed XML string
  */
 export function buildCap12Xml(alert, {
   status = 'Exercise',
-  sender = 'ddma-aizawl@disaster.mz.gov.in',
+  sender = null,
   geometry = null,
   context = {},
 } = {}) {
@@ -76,28 +75,46 @@ export function buildCap12Xml(alert, {
     ? new Date(context.valid_to)
     : new Date(onsetDate.getTime() + 12 * 3600 * 1000);
 
-  const identifier = `IN-MZ-DDMA-ALERT-${alert.id}-${Date.parse(sentIso)}`;
+  const districtId = (context.district_id || 'district').toLowerCase();
+  const districtName = context.district_name || districtId.toUpperCase();
+  const stateName = context.state_name || 'India';
+  const stateCode = context.state_name ? context.state_name.substring(0, 2).toUpperCase() : 'IN';
+  const distCode = districtId.substring(0, 4).toUpperCase();
+
+  const identifier = `IN-${stateCode}-${distCode}-ALERT-${alert.id}-${Date.parse(sentIso)}`;
+  const senderEmail = sender || `ddma-${districtId}@disaster.gov.in`;
+  const senderName = `${districtName} District Disaster Management Authority (DDMA)`;
+
   const severity = alert.severity || 'Severe';
-  const wardName = context.ward_name || 'Melthum';
-  const districtName = (context.district_id || 'aizawl').toUpperCase();
-  const senderName = `${context.district_name || 'Aizawl'} District Disaster Management Authority (DDMA)`;
+  const wardName = context.ward_name;
+  const slopeUnitId = context.slope_unit_id;
 
   const polygonStr = geometry ? geoJsonPolygonToCap(geometry) : '';
 
-  // Render frozen multi-language instructions
+  // Render dynamic multi-language instructions
   const smsTexts = renderSmsTemplates({
     severity,
     wardName,
-    districtName: context.district_name || 'Aizawl',
+    slopeUnitId,
+    districtName,
     validFrom: onsetDate,
     validTo: expiresDate,
+    roadMetres: context.road_metres,
   });
+
+  const locationDescriptor = wardName
+    ? `${wardName}, ${districtName}, ${stateName}`
+    : (slopeUnitId ? `Slope Unit ${slopeUnitId}, ${districtName}, ${stateName}` : `${districtName}, ${stateName}`);
+
+  const headlineEn = alert.headline || `Landslide Risk Warning - ${wardName || slopeUnitId || districtName}`;
+  const headlineHi = `भूस्खलन जोखिम चेतावनी - ${wardName || slopeUnitId || districtName}`;
+  const headlineMizo = `Leimin Hlauhawm Hriattirna - ${wardName || slopeUnitId || districtName}`;
 
   const xmlParts = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">',
     `  <identifier>${escapeXml(identifier)}</identifier>`,
-    `  <sender>${escapeXml(sender)}</sender>`,
+    `  <sender>${escapeXml(senderEmail)}</sender>`,
     `  <sent>${escapeXml(sentIso)}</sent>`,
     `  <status>${escapeXml(status)}</status>`,
     '  <msgType>Alert</msgType>',
@@ -119,11 +136,11 @@ export function buildCap12Xml(alert, {
     `    <onset>${escapeXml(onsetDate.toISOString())}</onset>`,
     `    <expires>${escapeXml(expiresDate.toISOString())}</expires>`,
     `    <senderName>${escapeXml(senderName)}</senderName>`,
-    `    <headline>${escapeXml(alert.headline || `Landslide Risk Warning - ${wardName}`)}</headline>`,
+    `    <headline>${escapeXml(headlineEn)}</headline>`,
     `    <description>${escapeXml(alert.body || smsTexts.en)}</description>`,
     `    <instruction>${escapeXml(smsTexts.en)}</instruction>`,
     '    <area>',
-    `      <areaDesc>${escapeXml(`${wardName}, ${districtName}, Mizoram`)}</areaDesc>`,
+    `      <areaDesc>${escapeXml(locationDescriptor)}</areaDesc>`,
   ];
 
   if (polygonStr) {
@@ -149,11 +166,11 @@ export function buildCap12Xml(alert, {
     `    <onset>${escapeXml(onsetDate.toISOString())}</onset>`,
     `    <expires>${escapeXml(expiresDate.toISOString())}</expires>`,
     `    <senderName>${escapeXml(senderName)}</senderName>`,
-    `    <headline>${escapeXml(`भूस्खलन जोखिम चेतावनी - ${wardName}`)}</headline>`,
+    `    <headline>${escapeXml(headlineHi)}</headline>`,
     `    <description>${escapeXml(smsTexts.hi)}</description>`,
     `    <instruction>${escapeXml(smsTexts.hi)}</instruction>`,
     '    <area>',
-    `      <areaDesc>${escapeXml(`${wardName}, ${districtName}, Mizoram`)}</areaDesc>`,
+    `      <areaDesc>${escapeXml(locationDescriptor)}</areaDesc>`,
   );
 
   if (polygonStr) {
@@ -179,11 +196,11 @@ export function buildCap12Xml(alert, {
     `    <onset>${escapeXml(onsetDate.toISOString())}</onset>`,
     `    <expires>${escapeXml(expiresDate.toISOString())}</expires>`,
     `    <senderName>${escapeXml(senderName)}</senderName>`,
-    `    <headline>${escapeXml(`Leimin Hlauhawm Hriattirna - ${wardName}`)}</headline>`,
+    `    <headline>${escapeXml(headlineMizo)}</headline>`,
     `    <description>${escapeXml(smsTexts.mizo)}</description>`,
     `    <instruction>${escapeXml(smsTexts.mizo)}</instruction>`,
     '    <area>',
-    `      <areaDesc>${escapeXml(`${wardName}, ${districtName}, Mizoram`)}</areaDesc>`,
+    `      <areaDesc>${escapeXml(locationDescriptor)}</areaDesc>`,
   );
 
   if (polygonStr) {

@@ -12,11 +12,9 @@
  * This is enforced at the database level by CHECK constraint
  * `alert_must_be_authorised_before_dispatch`.
  *
- * THE CAP & SMS PIPELINE (V14):
- * - Authorisation generates valid OASIS CAP 1.2 XML (`alert.cap_xml`)
- * - GET /api/v1/alerts/:id/cap.xml serves standards-compliant XML (ready for SACHET)
- * - GET /api/v1/alerts/:id/sms delivers 3-language frozen previews (English, Hindi, Mizo)
- * - Dispatching inserts delivered SMS records into mock_sms_dispatch
+ * ZERO HARDCODED VALUES:
+ * All jurisdictions, state names, districts, slope unit IDs, wards, and road exposure
+ * are dynamically resolved from the database models.
  */
 
 import { buildCap12Xml } from '../alerting/cap.js';
@@ -39,21 +37,25 @@ function requireDatabase() {
 
 /**
  * Helper to dispatch mock SMS in English, Hindi, and Mizo into mock_sms_dispatch.
+ * Fully dynamic: resolves group names and text from ward, slope unit, district, and exposure.
  */
-async function dispatchMockSms(client, { alertId, severity, wardName, districtName, validFrom, validTo }) {
+async function dispatchMockSms(client, { alertId, severity, wardName, slopeUnitId, districtName, stateName, validFrom, validTo, roadMetres }) {
   const smsTexts = renderSmsTemplates({
     severity,
     wardName,
+    slopeUnitId,
     districtName,
+    stateName,
     validFrom,
     validTo,
+    roadMetres,
   });
 
-  const wardTag = (wardName || 'AIZAWL').toUpperCase().replace(/\s+/g, '_');
+  const locationTag = (wardName || slopeUnitId || districtName || 'SECTOR').toUpperCase().replace(/[^A-Z0-9]/g, '_');
   const dispatches = [
-    { lang: 'en', text: smsTexts.en, group: `PUBLIC_WARD_${wardTag}_EN` },
-    { lang: 'hi', text: smsTexts.hi, group: `PUBLIC_WARD_${wardTag}_HI` },
-    { lang: 'mizo', text: smsTexts.mizo, group: `PUBLIC_WARD_${wardTag}_MIZO` },
+    { lang: 'en', text: smsTexts.en, group: `PUBLIC_${locationTag}_EN` },
+    { lang: 'hi', text: smsTexts.hi, group: `PUBLIC_${locationTag}_HI` },
+    { lang: 'mizo', text: smsTexts.mizo, group: `PUBLIC_${locationTag}_MIZO` },
   ];
 
   for (const item of dispatches) {
@@ -118,11 +120,12 @@ export async function registerAlertRoutes(app) {
       requireDatabase();
       const { prediction_id, severity = 'Severe', headline, body, channels = ['SMS', 'APP'] } = request.body;
 
-      // Verify prediction exists and get district
+      // Verify prediction exists and get district & ward dynamically
       const { rows: pRows } = await query(
-        `SELECT p.id, p.slope_unit_id, p.risk_level, p.probability, s.district_id, s.ward_name
+        `SELECT p.id, p.slope_unit_id, p.risk_level, p.probability, s.district_id, s.ward_name, d.name AS district_name
          FROM prediction p
          JOIN slope_unit s ON s.id = p.slope_unit_id
+         LEFT JOIN district d ON d.id = s.district_id
          WHERE p.id = $1`,
         [prediction_id],
       );
@@ -134,10 +137,11 @@ export async function registerAlertRoutes(app) {
       }
 
       const p = pRows[0];
-      const defaultHeadline = headline || `Landslide Risk Warning: ${p.ward_name || p.slope_unit_id}`;
+      const locLabel = p.ward_name || `Slope Unit ${p.slope_unit_id}`;
+      const defaultHeadline = headline || `Landslide Risk Warning: ${locLabel}`;
       const defaultBody =
         body ||
-        `High failure probability (${Math.round(p.probability * 100)}%) detected for slope unit ${p.slope_unit_id}. ` +
+        `High failure probability (${Math.round(p.probability * 100)}%) detected for ${locLabel}. ` +
           `Impact risk: ${p.risk_level ?? 'ASSESSED'}. Evacuation / road caution advised.`;
 
       const { rows } = await query(
@@ -193,12 +197,14 @@ export async function registerAlertRoutes(app) {
                a.rejected_by, u_rej.full_name AS rejected_by_name, a.rejected_at, a.rejection_reason,
                a.dispatched_at, a.created_at,
                p.slope_unit_id, p.probability, p.risk_level, p.verification_status,
-               s.district_id, s.ward_name,
+               s.district_id, s.ward_name, d.name AS district_name, d.state AS state_name,
                coalesce(e.population_estimate, 0) AS population_estimate,
-               coalesce(e.buildings_count, 0) AS buildings_count
+               coalesce(e.buildings_count, 0) AS buildings_count,
+               coalesce(e.road_metres, 0) AS road_metres
         FROM alert a
         JOIN prediction p ON p.id = a.prediction_id
         JOIN slope_unit s ON s.id = p.slope_unit_id
+        LEFT JOIN district d ON d.id = s.district_id
         LEFT JOIN exposure e ON e.prediction_id = p.id
         LEFT JOIN app_user u_auth ON u_auth.id = a.authorised_by
         LEFT JOIN app_user u_rej  ON u_rej.id  = a.rejected_by
@@ -230,11 +236,14 @@ export async function registerAlertRoutes(app) {
           slope_unit_id: r.slope_unit_id,
           ward_name: r.ward_name,
           district_id: r.district_id,
+          district_name: r.district_name,
+          state_name: r.state_name,
           probability: Number(r.probability),
           risk_level: r.risk_level,
           verification_status: r.verification_status,
           population_estimate: Number(r.population_estimate),
           buildings_count: Number(r.buildings_count),
+          road_metres: Number(r.road_metres),
         },
         authorisation: r.authorised_by
           ? {
@@ -259,7 +268,7 @@ export async function registerAlertRoutes(app) {
 
   // ---------- POST /api/v1/alerts/:id/authorise ----------
   // Named human officer authorises the alert dispatch.
-  // Automatically generates OASIS CAP 1.2 XML and saves to alert.cap_xml.
+  // Automatically generates OASIS CAP 1.2 XML with dynamic database context and saves to alert.cap_xml.
   app.post(
     '/api/v1/alerts/:id/authorise',
     {
@@ -288,16 +297,19 @@ export async function registerAlertRoutes(app) {
       const alertId = Number(request.params.id);
       const autoDispatch = Boolean(request.body?.auto_dispatch);
 
-      // Fetch alert + district + geometry + prediction details
+      // Fetch alert + district + geometry + prediction + exposure details dynamically
       const { rows: aRows } = await query(
         `SELECT a.id, a.status, a.severity, a.headline, a.body, a.prediction_id,
                 p.valid_from, p.valid_to, p.probability, p.risk_level,
-                s.district_id, s.ward_name, d.name AS district_name,
-                ST_AsGeoJSON(s.geom)::json AS geom_json
+                s.id AS slope_unit_id, s.district_id, s.ward_name,
+                d.name AS district_name, d.state AS state_name,
+                ST_AsGeoJSON(s.geom)::json AS geom_json,
+                e.road_metres
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
          LEFT JOIN district d ON d.id = s.district_id
+         LEFT JOIN exposure e ON e.prediction_id = p.id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -321,7 +333,7 @@ export async function registerAlertRoutes(app) {
 
       const newStatus = autoDispatch ? 'DISPATCHED' : 'AUTHORISED';
 
-      // Generate OASIS CAP 1.2 XML at authorisation time
+      // Generate OASIS CAP 1.2 XML dynamically at authorisation time
       const capXml = buildCap12Xml(
         {
           id: alertId,
@@ -335,10 +347,13 @@ export async function registerAlertRoutes(app) {
           geometry: alert.geom_json,
           context: {
             ward_name: alert.ward_name,
+            slope_unit_id: alert.slope_unit_id,
             district_id: alert.district_id,
             district_name: alert.district_name,
+            state_name: alert.state_name,
             valid_from: alert.valid_from,
             valid_to: alert.valid_to,
+            road_metres: alert.road_metres,
           },
         },
       );
@@ -363,9 +378,12 @@ export async function registerAlertRoutes(app) {
             alertId,
             severity: alert.severity,
             wardName: alert.ward_name,
+            slopeUnitId: alert.slope_unit_id,
             districtName: alert.district_name || alert.district_id,
+            stateName: alert.state_name,
             validFrom: alert.valid_from,
             validTo: alert.valid_to,
+            roadMetres: alert.road_metres,
           });
         }
 
@@ -539,11 +557,14 @@ export async function registerAlertRoutes(app) {
       const { rows: aRows } = await query(
         `SELECT a.id, a.status, a.severity, a.authorised_by,
                 p.valid_from, p.valid_to,
-                s.district_id, s.ward_name, d.name AS district_name
+                s.id AS slope_unit_id, s.district_id, s.ward_name,
+                d.name AS district_name, d.state AS state_name,
+                e.road_metres
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
          LEFT JOIN district d ON d.id = s.district_id
+         LEFT JOIN exposure e ON e.prediction_id = p.id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -574,14 +595,17 @@ export async function registerAlertRoutes(app) {
           [alertId],
         );
 
-        // Perform mock SMS dispatch for all 3 languages
+        // Perform dynamic mock SMS dispatch for all 3 languages
         await dispatchMockSms(client, {
           alertId,
           severity: alert.severity,
           wardName: alert.ward_name,
+          slopeUnitId: alert.slope_unit_id,
           districtName: alert.district_name || alert.district_id,
+          stateName: alert.state_name,
           validFrom: alert.valid_from,
           validTo: alert.valid_to,
+          roadMetres: alert.road_metres,
         });
 
         await recordAudit(client, {
@@ -630,12 +654,15 @@ export async function registerAlertRoutes(app) {
         `SELECT a.id, a.status, a.severity, a.headline, a.body, a.cap_xml,
                 a.authorised_at, a.created_at,
                 p.valid_from, p.valid_to, p.probability, p.risk_level,
-                s.ward_name, s.district_id, d.name AS district_name,
-                ST_AsGeoJSON(s.geom)::json AS geom_json
+                s.id AS slope_unit_id, s.ward_name, s.district_id,
+                d.name AS district_name, d.state AS state_name,
+                ST_AsGeoJSON(s.geom)::json AS geom_json,
+                e.road_metres
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
          LEFT JOIN district d ON d.id = s.district_id
+         LEFT JOIN exposure e ON e.prediction_id = p.id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -654,10 +681,13 @@ export async function registerAlertRoutes(app) {
           geometry: row.geom_json,
           context: {
             ward_name: row.ward_name,
+            slope_unit_id: row.slope_unit_id,
             district_id: row.district_id,
             district_name: row.district_name,
+            state_name: row.state_name,
             valid_from: row.valid_from,
             valid_to: row.valid_to,
+            road_metres: row.road_metres,
           },
         });
       }
@@ -668,7 +698,7 @@ export async function registerAlertRoutes(app) {
   );
 
   // ---------- GET /api/v1/alerts/:id/sms ----------
-  // Serves 3-language SMS previews and dispatched mock message records
+  // Serves dynamic 3-language SMS previews and dispatched mock message records
   app.get(
     '/api/v1/alerts/:id/sms',
     {
@@ -691,11 +721,14 @@ export async function registerAlertRoutes(app) {
       const { rows: aRows } = await query(
         `SELECT a.id, a.status, a.severity, a.dispatched_at,
                 p.valid_from, p.valid_to,
-                s.ward_name, s.district_id, d.name AS district_name
+                s.id AS slope_unit_id, s.ward_name, s.district_id,
+                d.name AS district_name, d.state AS state_name,
+                e.road_metres
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
          LEFT JOIN district d ON d.id = s.district_id
+         LEFT JOIN exposure e ON e.prediction_id = p.id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -710,16 +743,19 @@ export async function registerAlertRoutes(app) {
       const previews = renderSmsTemplates({
         severity: alert.severity,
         wardName: alert.ward_name,
+        slopeUnitId: alert.slope_unit_id,
         districtName: alert.district_name || alert.district_id,
+        stateName: alert.state_name,
         validFrom: alert.valid_from,
         validTo: alert.valid_to,
+        roadMetres: alert.road_metres,
       });
 
       const { rows: dispatchedRows } = await query(
         `SELECT id, channel, language, recipient_group, message_text, status, dispatched_at
-         FROM mock_sms_dispatch
-         WHERE alert_id = $1
-         ORDER BY id ASC`,
+       FROM mock_sms_dispatch
+       WHERE alert_id = $1
+       ORDER BY id ASC`,
         [alertId],
       );
 
