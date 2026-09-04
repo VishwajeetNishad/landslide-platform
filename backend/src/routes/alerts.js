@@ -1,7 +1,8 @@
 /**
- * src/routes/alerts.js -- Disaster alert state machine and human authorization gate (Step V12).
+ * src/routes/alerts.js -- Disaster alert state machine, human authorization gate,
+ * and OASIS CAP 1.2 / multilingual SMS dissemination (Steps V12 & V14).
  *
- * Implements ARCHITECTURE.md §14, §20 / IMPLEMENTATION_STEPS.md V12.
+ * Implements ARCHITECTURE.md §14, §16, §20 / IMPLEMENTATION_STEPS.md V12, V14.
  *
  * State machine:
  *   DRAFT -> PENDING_AUTHORISATION -> AUTHORISED / REJECTED -> DISPATCHED
@@ -10,11 +11,19 @@
  * No alert can reach DISPATCHED without a named human officer in authorised_by.
  * This is enforced at the database level by CHECK constraint
  * `alert_must_be_authorised_before_dispatch`.
+ *
+ * THE CAP & SMS PIPELINE (V14):
+ * - Authorisation generates valid OASIS CAP 1.2 XML (`alert.cap_xml`)
+ * - GET /api/v1/alerts/:id/cap.xml serves standards-compliant XML (ready for SACHET)
+ * - GET /api/v1/alerts/:id/sms delivers 3-language frozen previews (English, Hindi, Mizo)
+ * - Dispatching inserts delivered SMS records into mock_sms_dispatch
  */
 
+import { buildCap12Xml } from '../alerting/cap.js';
+import { renderSmsTemplates } from '../alerting/templates.js';
+import { recordAudit } from '../core/audit.js';
 import { authenticate } from '../core/auth.js';
 import { assertDistrictAccess, requireRole, ROLES } from '../core/rbac.js';
-import { recordAudit } from '../core/audit.js';
 import { getPool, query, withTransaction } from '../db/pool.js';
 
 function requireDatabase() {
@@ -26,6 +35,36 @@ function requireDatabase() {
     err.statusCode = 503;
     throw err;
   }
+}
+
+/**
+ * Helper to dispatch mock SMS in English, Hindi, and Mizo into mock_sms_dispatch.
+ */
+async function dispatchMockSms(client, { alertId, severity, wardName, districtName, validFrom, validTo }) {
+  const smsTexts = renderSmsTemplates({
+    severity,
+    wardName,
+    districtName,
+    validFrom,
+    validTo,
+  });
+
+  const wardTag = (wardName || 'AIZAWL').toUpperCase().replace(/\s+/g, '_');
+  const dispatches = [
+    { lang: 'en', text: smsTexts.en, group: `PUBLIC_WARD_${wardTag}_EN` },
+    { lang: 'hi', text: smsTexts.hi, group: `PUBLIC_WARD_${wardTag}_HI` },
+    { lang: 'mizo', text: smsTexts.mizo, group: `PUBLIC_WARD_${wardTag}_MIZO` },
+  ];
+
+  for (const item of dispatches) {
+    await client.query(
+      `INSERT INTO mock_sms_dispatch (alert_id, channel, language, recipient_group, message_text, status)
+       VALUES ($1, 'SMS', $2, $3, $4, 'DELIVERED')`,
+      [alertId, item.lang, item.group, item.text],
+    );
+  }
+
+  return smsTexts;
 }
 
 export async function registerAlertRoutes(app) {
@@ -220,6 +259,7 @@ export async function registerAlertRoutes(app) {
 
   // ---------- POST /api/v1/alerts/:id/authorise ----------
   // Named human officer authorises the alert dispatch.
+  // Automatically generates OASIS CAP 1.2 XML and saves to alert.cap_xml.
   app.post(
     '/api/v1/alerts/:id/authorise',
     {
@@ -248,12 +288,16 @@ export async function registerAlertRoutes(app) {
       const alertId = Number(request.params.id);
       const autoDispatch = Boolean(request.body?.auto_dispatch);
 
-      // Fetch alert + district
+      // Fetch alert + district + geometry + prediction details
       const { rows: aRows } = await query(
-        `SELECT a.id, a.status, a.prediction_id, s.district_id, s.ward_name
+        `SELECT a.id, a.status, a.severity, a.headline, a.body, a.prediction_id,
+                p.valid_from, p.valid_to, p.probability, p.risk_level,
+                s.district_id, s.ward_name, d.name AS district_name,
+                ST_AsGeoJSON(s.geom)::json AS geom_json
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
+         LEFT JOIN district d ON d.id = s.district_id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -277,18 +321,53 @@ export async function registerAlertRoutes(app) {
 
       const newStatus = autoDispatch ? 'DISPATCHED' : 'AUTHORISED';
 
+      // Generate OASIS CAP 1.2 XML at authorisation time
+      const capXml = buildCap12Xml(
+        {
+          id: alertId,
+          severity: alert.severity,
+          headline: alert.headline,
+          body: alert.body,
+          authorised_at: new Date(),
+        },
+        {
+          status: 'Exercise',
+          geometry: alert.geom_json,
+          context: {
+            ward_name: alert.ward_name,
+            district_id: alert.district_id,
+            district_name: alert.district_name,
+            valid_from: alert.valid_from,
+            valid_to: alert.valid_to,
+          },
+        },
+      );
+
       const updated = await withTransaction(async (client) => {
         const { rows: upRows } = await client.query(
           `UPDATE alert
            SET status = $1,
                authorised_by = $2,
                authorised_at = now(),
-               dispatched_at = CASE WHEN $3 = TRUE THEN now() ELSE dispatched_at END
-           WHERE id = $4
+               cap_xml = $3,
+               dispatched_at = CASE WHEN $4 = TRUE THEN now() ELSE dispatched_at END
+           WHERE id = $5
            RETURNING id, prediction_id, status, severity, headline, body,
-                     authorised_by, authorised_at, dispatched_at`,
-          [newStatus, request.user.sub, autoDispatch, alertId],
+                     authorised_by, authorised_at, dispatched_at, cap_xml`,
+          [newStatus, request.user.sub, capXml, autoDispatch, alertId],
         );
+
+        // If auto-dispatching, dispatch mock SMS records across 3 languages
+        if (autoDispatch) {
+          await dispatchMockSms(client, {
+            alertId,
+            severity: alert.severity,
+            wardName: alert.ward_name,
+            districtName: alert.district_name || alert.district_id,
+            validFrom: alert.valid_from,
+            validTo: alert.valid_to,
+          });
+        }
 
         await recordAudit(client, {
           actorId: request.user.sub,
@@ -304,6 +383,18 @@ export async function registerAlertRoutes(app) {
           },
         });
 
+        if (autoDispatch) {
+          await recordAudit(client, {
+            actorId: request.user.sub,
+            actorLabel: request.user.full_name || request.user.email,
+            action: 'ALERT_DISPATCHED',
+            entity: 'alert',
+            entityId: alertId,
+            before: { status: 'AUTHORISED' },
+            after: { status: 'DISPATCHED' },
+          });
+        }
+
         return upRows[0];
       });
 
@@ -315,6 +406,7 @@ export async function registerAlertRoutes(app) {
         authorised_by_name: request.user.full_name || request.user.email,
         authorised_at: updated.authorised_at ? updated.authorised_at.toISOString() : null,
         dispatched_at: updated.dispatched_at ? updated.dispatched_at.toISOString() : null,
+        cap_xml_generated: Boolean(updated.cap_xml),
       };
     },
   );
@@ -423,13 +515,14 @@ export async function registerAlertRoutes(app) {
 
   // ---------- POST /api/v1/alerts/:id/dispatch ----------
   // Dispatches an alert that was previously AUTHORISED.
+  // Performs mock SMS dissemination into mock_sms_dispatch.
   app.post(
     '/api/v1/alerts/:id/dispatch',
     {
       preHandler: [authenticate, requireRole(ROLES.SUPER_ADMIN, ROLES.DISTRICT_ADMIN)],
       schema: {
         tags: ['alerts'],
-        summary: 'Dispatch an authorized alert to public emergency channels',
+        summary: 'Dispatch an authorized alert to public emergency channels and mock SMS',
         params: {
           type: 'object',
           required: ['id'],
@@ -444,10 +537,13 @@ export async function registerAlertRoutes(app) {
       const alertId = Number(request.params.id);
 
       const { rows: aRows } = await query(
-        `SELECT a.id, a.status, a.authorised_by, s.district_id
+        `SELECT a.id, a.status, a.severity, a.authorised_by,
+                p.valid_from, p.valid_to,
+                s.district_id, s.ward_name, d.name AS district_name
          FROM alert a
          JOIN prediction p ON p.id = a.prediction_id
          JOIN slope_unit s ON s.id = p.slope_unit_id
+         LEFT JOIN district d ON d.id = s.district_id
          WHERE a.id = $1`,
         [alertId],
       );
@@ -478,6 +574,16 @@ export async function registerAlertRoutes(app) {
           [alertId],
         );
 
+        // Perform mock SMS dispatch for all 3 languages
+        await dispatchMockSms(client, {
+          alertId,
+          severity: alert.severity,
+          wardName: alert.ward_name,
+          districtName: alert.district_name || alert.district_id,
+          validFrom: alert.valid_from,
+          validTo: alert.valid_to,
+        });
+
         await recordAudit(client, {
           actorId: request.user.sub,
           actorLabel: request.user.full_name || request.user.email,
@@ -495,6 +601,143 @@ export async function registerAlertRoutes(app) {
         id: Number(updated.id),
         status: updated.status,
         dispatched_at: updated.dispatched_at.toISOString(),
+      };
+    },
+  );
+
+  // ---------- GET /api/v1/alerts/:id/cap.xml ----------
+  // Serves OASIS CAP 1.2 compliant XML for government early warning pipelines (SACHET)
+  app.get(
+    '/api/v1/alerts/:id/cap.xml',
+    {
+      schema: {
+        tags: ['alerts'],
+        summary: 'Get OASIS CAP 1.2 XML for an alert (geo-scoped with runout polygon)',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', pattern: '^[0-9]+$' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      requireDatabase();
+      const alertId = Number(request.params.id);
+
+      const { rows } = await query(
+        `SELECT a.id, a.status, a.severity, a.headline, a.body, a.cap_xml,
+                a.authorised_at, a.created_at,
+                p.valid_from, p.valid_to, p.probability, p.risk_level,
+                s.ward_name, s.district_id, d.name AS district_name,
+                ST_AsGeoJSON(s.geom)::json AS geom_json
+         FROM alert a
+         JOIN prediction p ON p.id = a.prediction_id
+         JOIN slope_unit s ON s.id = p.slope_unit_id
+         LEFT JOIN district d ON d.id = s.district_id
+         WHERE a.id = $1`,
+        [alertId],
+      );
+
+      if (rows.length === 0) {
+        const err = new Error(`No alert with id '${alertId}'`);
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const row = rows[0];
+      let xml = row.cap_xml;
+      if (!xml) {
+        xml = buildCap12Xml(row, {
+          status: 'Exercise',
+          geometry: row.geom_json,
+          context: {
+            ward_name: row.ward_name,
+            district_id: row.district_id,
+            district_name: row.district_name,
+            valid_from: row.valid_from,
+            valid_to: row.valid_to,
+          },
+        });
+      }
+
+      reply.type('application/xml; charset=utf-8');
+      return xml;
+    },
+  );
+
+  // ---------- GET /api/v1/alerts/:id/sms ----------
+  // Serves 3-language SMS previews and dispatched mock message records
+  app.get(
+    '/api/v1/alerts/:id/sms',
+    {
+      schema: {
+        tags: ['alerts'],
+        summary: 'Get 3-language SMS previews and dispatched delivery history',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string', pattern: '^[0-9]+$' },
+          },
+        },
+      },
+    },
+    async (request) => {
+      requireDatabase();
+      const alertId = Number(request.params.id);
+
+      const { rows: aRows } = await query(
+        `SELECT a.id, a.status, a.severity, a.dispatched_at,
+                p.valid_from, p.valid_to,
+                s.ward_name, s.district_id, d.name AS district_name
+         FROM alert a
+         JOIN prediction p ON p.id = a.prediction_id
+         JOIN slope_unit s ON s.id = p.slope_unit_id
+         LEFT JOIN district d ON d.id = s.district_id
+         WHERE a.id = $1`,
+        [alertId],
+      );
+
+      if (aRows.length === 0) {
+        const err = new Error(`No alert with id '${alertId}'`);
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const alert = aRows[0];
+      const previews = renderSmsTemplates({
+        severity: alert.severity,
+        wardName: alert.ward_name,
+        districtName: alert.district_name || alert.district_id,
+        validFrom: alert.valid_from,
+        validTo: alert.valid_to,
+      });
+
+      const { rows: dispatchedRows } = await query(
+        `SELECT id, channel, language, recipient_group, message_text, status, dispatched_at
+         FROM mock_sms_dispatch
+         WHERE alert_id = $1
+         ORDER BY id ASC`,
+        [alertId],
+      );
+
+      return {
+        alert_id: Number(alert.id),
+        status: alert.status,
+        is_dispatched: alert.status === 'DISPATCHED',
+        dispatched_at: alert.dispatched_at ? alert.dispatched_at.toISOString() : null,
+        previews,
+        dispatched_messages: dispatchedRows.map((r) => ({
+          id: Number(r.id),
+          channel: r.channel,
+          language: r.language,
+          recipient_group: r.recipient_group,
+          message_text: r.message_text,
+          status: r.status,
+          dispatched_at: r.dispatched_at.toISOString(),
+        })),
       };
     },
   );
