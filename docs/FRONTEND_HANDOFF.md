@@ -129,9 +129,26 @@ badlega.
 aspect_sin/aspect_cos, waghera). Ye pop-up mein dikhane ke liye hain — poori
 list `API_CONTRACT.md` §4a mein hai.
 
+Aur `risk/current` ka `summary` aisa aata hai (ye bhi asli output hai):
+
+```json
+{
+  "total_slope_units": 3,
+  "high_risk_count": 2,
+  "medium_risk_count": 0,
+  "low_risk_count": 1,
+  "risk_not_computed_count": 0,
+  "pending_verification_count": 3,
+  "lead_time_hours": 10
+}
+```
+
+Dhyaan do: **paanch** count hain, chaar nahi. `risk_not_computed_count`
+neeche §5 mein samjhaya hai — usko `low_risk_count` mein mat jodna.
+
 ---
 
-## 5. Paanch cheezein jo galat karna aasaan hai
+## 5. Chhe cheezein jo galat karna aasaan hai
 
 **`properties.slope_unit_id` use karna, `properties.id` nahi.** Feature ke
 paas apna `id` member already hai (`feature.id`). `properties.id` likhne se
@@ -157,6 +174,19 @@ AZ-1088).
 calculate karta hai, toh ye number bharosemand hai — par `is_mock: true`
 wale unit ki geometry hand-drawn hai, toh area ko "measurement" bolkar
 quote nahi karna.
+
+**`risk_level` `null` ho toh use GREEN mat karna.** `risk/current` mein
+`properties.risk_level` chaar values de sakta hai: `HIGH`, `MEDIUM`, `LOW`,
+ya `null`. `null` ka matlab **"low risk" nahi** hai — matlab hai *us slope
+ka exposure nikala hi nahi gaya*, toh risk ka jawab hi nahi hai. Usko
+**grey / hatched** karo aur legend mein "Not assessed" likho.
+
+Kyun ye itna matter karta hai: AZ-1088 ka `LOW` ek **finding** hai — runout
+envelope draw hua, intersect hua, neeche koi nahi nikla. `null` ek
+**absence** hai. Dono ko green karne ka matlab hai officer ko dikhana ki
+"yahan koi khatra nahi" jab humne dekha hi nahi. `summary` mein iske liye
+`risk_not_computed_count` alag field hai — usko summary card par dikhana,
+`low_risk_count` mein add nahi karna.
 
 ---
 

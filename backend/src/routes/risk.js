@@ -157,18 +157,27 @@ const FEATURES_SQL = `
 
 /**
  * Build the summary object from the query results.
+ *
+ * A NULL risk_level is counted in its own bucket, not folded into
+ * low_risk_count. Migration 004 defines NULL as "exposure not yet computed"
+ * and says the API must not present such a row as though its risk were
+ * known. Counting it as low did exactly that: the officer's summary card
+ * would read "3 low" when the truth is "2 low, 1 not assessed", and the one
+ * unassessed slope is the one worth asking about.
  */
 function buildSummary(rows, runTs) {
   let high = 0;
   let medium = 0;
   let low = 0;
+  let notComputed = 0;
   let pendingVerification = 0;
   let validFrom = null;
 
   for (const row of rows) {
     if (row.risk_level === 'HIGH') high++;
     else if (row.risk_level === 'MEDIUM') medium++;
-    else low++;
+    else if (row.risk_level === 'LOW') low++;
+    else notComputed++;
 
     if (row.verification_status === 'PENDING_VERIFICATION') pendingVerification++;
 
@@ -190,6 +199,7 @@ function buildSummary(rows, runTs) {
     high_risk_count: high,
     medium_risk_count: medium,
     low_risk_count: low,
+    risk_not_computed_count: notComputed,
     pending_verification_count: pendingVerification,
     lead_time_hours: leadTimeHours,
   };
@@ -331,6 +341,7 @@ export async function registerRiskRoutes(app) {
             high_risk_count: 0,
             medium_risk_count: 0,
             low_risk_count: 0,
+            risk_not_computed_count: 0,
             pending_verification_count: 0,
             lead_time_hours: null,
           },

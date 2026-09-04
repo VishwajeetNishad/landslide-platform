@@ -94,16 +94,32 @@ describe('risk dashboard from the database', {
       let high = 0;
       let medium = 0;
       let low = 0;
+      let notComputed = 0;
       for (const f of features) {
         const rl = f.properties.risk_level;
         if (rl === 'HIGH') high++;
         else if (rl === 'MEDIUM') medium++;
-        else low++;
+        else if (rl === 'LOW') low++;
+        else notComputed++;
       }
 
       assert.equal(summary.high_risk_count, high);
       assert.equal(summary.medium_risk_count, medium);
       assert.equal(summary.low_risk_count, low);
+
+      // A NULL risk_level must NOT be counted as low. Migration 004 defines
+      // NULL as "exposure not yet computed", so folding it into
+      // low_risk_count turns "not assessed" into "assessed and fine" on the
+      // officer's summary card.
+      assert.equal(summary.risk_not_computed_count, notComputed);
+      assert.equal(
+        summary.high_risk_count +
+          summary.medium_risk_count +
+          summary.low_risk_count +
+          summary.risk_not_computed_count,
+        summary.total_slope_units,
+        'the four buckets must add up to the total',
+      );
     }
   });
 

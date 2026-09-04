@@ -74,29 +74,48 @@ curl -s -X POST http://localhost:8000/api/v1/predictions/ingest \
   --data-binary @data/sample/mock_ml_output.json
 ```
 
-Jawab:
+Jawab (ye asli captured output hai, V8 ke baad):
 
 ```json
 {
-  "forecast_run_id": 2,
-  "model_version": "tank-stageA-v0.1",
+  "forecast_run_id": 80,
   "predictions_stored": 3,
   "runouts_stored": 3,
   "exposures_stored": 3,
-  "risk_level": null,
-  "verification_status": "PENDING_VERIFICATION",
   "is_demo_data": true,
   "mock_slope_units": 3,
+  "risk_levels": { "HIGH": 2, "MEDIUM": 0, "LOW": 1, "not_computed": 0 },
+  "note": "Stored 3 prediction(s) at verification_status PENDING_VERIFICATION; ...",
   "warnings": [
-    "predictions[0].runout.source_citation reads like a placeholder ...",
-    "predictions[0].exposure.population_source is mock data and must not be quoted as a measurement ..."
+    "predictions[0] (AZ-1142): runout.source_citation reads like a placeholder ...",
+    "predictions[0] (AZ-1142): population_source says \"WorldPop 2020 100m (mock value)\" ..."
   ]
 }
 ```
 
-`risk_level: null` **jaan-boojh kar** bheja jaata hai, hataya nahi jaata.
-Missing key ko koi "risk nikal gaya aur theek tha" padh sakta hai; `null`
-ka matlab saaf hai — abhi nikala hi nahi (V8 nikaalega).
+**V8 ke baad `risk_level` ka rule badal gaya hai — pehle padho.**
+
+Pehle (V7) har prediction ka `risk_level` NULL hi rehta tha, aur reply mein
+ek `"risk_level": null` aata tha. Ab V8 usko **usi transaction mein** nikaal
+kar likhta hai. Par sirf tab, jab tumne us prediction ke saath `exposure`
+block bheja ho:
+
+| Tumne kya bheja | DB mein `risk_level` |
+|---|---|
+| `exposure` block bheja | `LOW` / `MEDIUM` / `HIGH` — probability × exposure se nikala hua |
+| `exposure` block nahi bheja | `NULL` — "exposure nikala hi nahi gaya" |
+
+`NULL` ka matlab **"low risk" nahi** hai. Matlab hai *humne dekha hi nahi ki
+neeche kaun hai*. Ye farq zaruri hai: AZ-1088 ka risk LOW hai kyunki runout
+envelope draw hua, intersect hua, aur neeche kuch nahi nikla — woh ek
+**finding** hai. `exposure` bheje bina LOW likhna uska matlab hi khatam kar
+deta, aur map par ek aise slope ko green kar deta jispar kisi ne nazar nahi
+daali.
+
+Isliye reply mein ab **`risk_levels` (plural)** aata hai — count per band,
+plus `not_computed`. `not_computed` **0 se zyada** dikhe toh matlab utne
+predictions dashboard par bina risk ke jaayenge. Woh galti nahi hai, par
+tumhe pata hona chahiye.
 
 ### Top level
 
@@ -481,8 +500,14 @@ render karna **allowed nahi** hai.
 `risk_level` **backend** calculate karta hai. Rudra sirf `probability` bhejta hai.
 
 Ye V7 se **code mein enforce** hai, sirf likha hua rule nahi: ingest endpoint
-`risk_level` wale prediction ko 422 karta hai, aur `prediction` row `risk_level`
-NULL ke saath banti hai. V8 usko bharega.
+`risk_level` wale prediction ko 422 karta hai. V8 ke baad backend khud usko
+`exposure` ke saath milakar bharta hai — par sirf un predictions ka jinke saath
+`exposure` aaya tha. Baaki NULL rehte hain (§3 ki table dekho).
+
+> **NULL aur LOW ek cheez nahi hain.** `risk_not_computed_count` isliye alag
+> field hai. Pehle dashboard NULL ko `low_risk_count` mein gin raha tha, jiska
+> matlab officer ke card par "3 low" dikhta jab sach "2 low, 1 dekha hi nahi"
+> tha — aur wahi ek slope sabse zyada poochhne wali cheez thi.
 
 > **Chup-chaap drop kyun nahi karte:** Fastify ka AJV `removeAdditional: true`
 > par chalta hai, toh `additionalProperties: false` unknown field ko **strip**
