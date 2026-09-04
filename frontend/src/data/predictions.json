@@ -1,0 +1,227 @@
+{
+  "model_version": "tank-stageA-v0.1",
+  "generated_at": "2026-09-03T10:00:00Z",
+  "predictions": [
+    {
+      "slope_unit_id": "AZ-1142",
+      "valid_from": "2026-09-03T10:00:00Z",
+      "valid_to": "2026-09-04T10:00:00Z",
+      "susceptibility_score": 0.82,
+      "probability": 0.72,
+      "confidence_lower": 0.58,
+      "confidence_upper": 0.84,
+      "tank_state": {
+        "S1": 42.5,
+        "S2": 48.0,
+        "S3": 51.5,
+        "SWI": 142.0
+      },
+      "rainfall": {
+        "observed_24h": 96,
+        "forecast_24h": 186,
+        "fraction_of_map": 0.88
+      },
+      "drivers": [
+        { "feature": "Soil water index", "shap_value": 0.31 },
+        { "feature": "Forecast rainfall", "shap_value": 0.24 },
+        { "feature": "Mean slope", "shap_value": 0.14 },
+        { "feature": "Road cut", "shap_value": 0.11 },
+        { "feature": "Susceptibility score", "shap_value": 0.09 },
+        { "feature": "TWI", "shap_value": 0.06 }
+      ],
+      "counterfactual": "40 mm less antecedent rainfall and this would not have fired",
+      "data_quality": {
+        "nearest_gauge_km": 11,
+        "rainfall_confidence": "MODERATE",
+        "label": "Nearest rain gauge: 11 km away | Rainfall confidence: MODERATE"
+      },
+      "runout": {
+        "available": true,
+        "length_m": 420,
+        "area_sqm": 24500
+      },
+      "exposure": {
+        "estimated_population": 120,
+        "buildings_count": 17,
+        "road_metres": 340,
+        "critical_facility_count": 1
+      }
+    },
+    {
+      "slope_unit_id": "AZ-1147",
+      "valid_from": "2026-09-03T10:00:00Z",
+      "valid_to": "2026-09-04T10:00:00Z",
+      "susceptibility_score": 0.75,
+      "probability": 0.68,
+      "confidence_lower": 0.52,
+      "confidence_upper": 0.79,
+      "tank_state": {
+        "S1": 36.0,
+        "S2": 44.5,
+        "S3": 47.5,
+        "SWI": 128.0
+      },
+      "rainfall": {
+        "observed_24h": 82,
+        "forecast_24h": 145,
+        "fraction_of_map": 0.76
+      },
+      "drivers": [
+        { "feature": "Soil water index", "shap_value": 0.27 },
+        { "feature": "Forecast rainfall", "shap_value": 0.21 },
+        { "feature": "Road cut", "shap_value": 0.16 },
+        { "feature": "Mean slope", "shap_value": 0.13 },
+        { "feature": "Susceptibility score", "shap_value": 0.08 },
+        { "feature": "TWI", "shap_value": 0.05 }
+      ],
+      "counterfactual": "25 mm less rainfall would drop probability below 50%",
+      "data_quality": {
+        "nearest_gauge_km": 7,
+        "rainfall_confidence": "HIGH",
+        "label": "Nearest rain gauge: 7 km away | Rainfall confidence: HIGH"
+      },
+      "runout": {
+        "available": true,
+        "length_m": 260,
+        "area_sqm": 12800
+      },
+      "exposure": {
+        "estimated_population": 45,
+        "buildings_count": 6,
+        "road_metres": 120,
+        "critical_facility_count": 0
+      }
+    },
+    {
+      "slope_unit_id": "AZ-1088",
+      "valid_from": "2026-09-03T10:00:00Z",
+      "valid_to": "2026-09-04T10:00:00Z",
+      "susceptibility_score": 0.94,
+      "probability": 0.95,
+      "confidence_lower": 0.88,
+      "confidence_upper": 0.98,
+      "tank_state": {
+        "S1": 48.0,
+        "S2": 52.0,
+        "S3": 58.0,
+        "SWI": 158.0
+      },
+      "rainfall": {
+        "observed_24h": 112,
+        "forecast_24h": 195,
+        "fraction_of_map": 0.92
+      },
+      "drivers": [
+        { "feature": "Mean slope", "shap_value": 0.38 },
+        { "feature": "Soil water index", "shap_value": 0.29 },
+        { "feature": "Forecast rainfall", "shap_value": 0.22 },
+        { "feature": "Susceptibility score", "shap_value": 0.15 },
+        { "feature": "TWI", "shap_value": 0.04 },
+        { "feature": "Road cut", "shap_value": 0.00 }
+      ],
+      "counterfactual": "If road infrastructure or settlements were built in runout zone, risk classification would escalate to HIGH",
+      "data_quality": {
+        "nearest_gauge_km": 8,
+        "rainfall_confidence": "HIGH",
+        "label": "Nearest rain gauge: 8 km away | Rainfall confidence: HIGH"
+      },
+      "runout": {
+        "available": true,
+        "length_m": 580,
+        "area_sqm": 38000
+      },
+      "exposure": {
+        "estimated_population": 0,
+        "buildings_count": 0,
+        "road_metres": 0,
+        "critical_facility_count": 0
+      }
+    },
+    {
+      "slope_unit_id": "AZ-1203",
+      "valid_from": "2026-09-03T10:00:00Z",
+      "valid_to": "2026-09-04T10:00:00Z",
+      "susceptibility_score": 0.32,
+      "probability": 0.24,
+      "confidence_lower": 0.12,
+      "confidence_upper": 0.36,
+      "tank_state": {
+        "S1": 18.0,
+        "S2": 32.0,
+        "S3": 34.0,
+        "SWI": 84.0
+      },
+      "rainfall": {
+        "observed_24h": 44,
+        "forecast_24h": 68,
+        "fraction_of_map": 0.35
+      },
+      "drivers": [
+        { "feature": "Soil water index", "shap_value": 0.12 },
+        { "feature": "Forecast rainfall", "shap_value": 0.09 },
+        { "feature": "Mean slope", "shap_value": 0.07 },
+        { "feature": "TWI", "shap_value": 0.04 },
+        { "feature": "Road cut", "shap_value": 0.02 },
+        { "feature": "Susceptibility score", "shap_value": 0.02 }
+      ],
+      "counterfactual": "Requires >120 mm additional 24h rainfall to approach critical threshold",
+      "data_quality": {
+        "nearest_gauge_km": 14,
+        "rainfall_confidence": "MODERATE",
+        "label": "Nearest rain gauge: 14 km away | Rainfall confidence: MODERATE"
+      },
+      "runout": {
+        "available": false
+      },
+      "exposure": {
+        "estimated_population": 15,
+        "buildings_count": 2,
+        "road_metres": 50,
+        "critical_facility_count": 0
+      }
+    },
+    {
+      "slope_unit_id": "AZ-0964",
+      "valid_from": "2026-09-03T10:00:00Z",
+      "valid_to": "2026-09-04T10:00:00Z",
+      "susceptibility_score": 0.14,
+      "probability": 0.08,
+      "confidence_lower": 0.03,
+      "confidence_upper": 0.15,
+      "tank_state": {
+        "S1": 12.0,
+        "S2": 24.0,
+        "S3": 24.0,
+        "SWI": 60.0
+      },
+      "rainfall": {
+        "observed_24h": 32,
+        "forecast_24h": 50,
+        "fraction_of_map": 0.22
+      },
+      "drivers": [
+        { "feature": "Soil water index", "shap_value": 0.05 },
+        { "feature": "Forecast rainfall", "shap_value": 0.04 },
+        { "feature": "Mean slope", "shap_value": 0.02 },
+        { "feature": "TWI", "shap_value": 0.01 },
+        { "feature": "Road cut", "shap_value": 0.00 },
+        { "feature": "Susceptibility score", "shap_value": 0.01 }
+      ],
+      "counterfactual": "Exhibits high geotechnical stability under all forecast scenarios",
+      "data_quality": {
+        "nearest_gauge_km": 5,
+        "rainfall_confidence": "HIGH",
+        "label": "Nearest rain gauge: 5 km away | Rainfall confidence: HIGH"
+      },
+      "runout": {
+        "available": false
+      },
+      "exposure": {
+        "estimated_population": 0,
+        "buildings_count": 0,
+        "road_metres": 0,
+        "critical_facility_count": 0
+      }
+    }
+  ]
+}
