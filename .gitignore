@@ -89,3 +89,7 @@ desktop.ini
 .idea/
 *.swp
 *~
+
+# Local editor/agent launch config
+.claude/
+frontend/.env.local
