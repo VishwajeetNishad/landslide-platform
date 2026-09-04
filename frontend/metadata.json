@@ -1,0 +1,6 @@
+{
+  "name": "TerraGuard Landslide Early Warning",
+  "description": "Officer monitoring dashboard, geospatial risk map, human verification queue, and CAP 1.2 decision console for landslide early warning in Aizawl District, Mizoram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

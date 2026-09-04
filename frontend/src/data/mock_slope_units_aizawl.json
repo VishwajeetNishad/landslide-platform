@@ -1,0 +1,180 @@
+{
+  "type": "FeatureCollection",
+  "provenance": {
+    "disclaimer": "Map geometry: simulated slope-unit polygons for demonstration.",
+    "methodology": "Simulated hydrological micro-catchment delineation",
+    "district": "Aizawl District, Mizoram"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "AZ-1142",
+      "properties": {
+        "slope_unit_id": "AZ-1142",
+        "ward_name": "Melthum",
+        "area_ha": 38.2,
+        "mean_slope_deg": 34.2,
+        "susceptibility_score": 0.82,
+        "area": "0.38 sq km",
+        "mean_slope": "34.2 deg",
+        "maximum_slope": "51.7 deg",
+        "relief": "142 m",
+        "twi": "6.8",
+        "lithology": "Shale / sandstone",
+        "land_cover": "Built-up",
+        "geological_province": "Surma Group (Bhuban Formation)",
+        "distance_to_road": "45 m",
+        "road_cut": "Yes",
+        "mean_annual_precipitation": "2,150 mm"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.712, 23.716],
+            [92.721, 23.717],
+            [92.723, 23.708],
+            [92.713, 23.706],
+            [92.712, 23.716]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1147",
+      "properties": {
+        "slope_unit_id": "AZ-1147",
+        "ward_name": "Bawngkawn",
+        "area_ha": 42.0,
+        "mean_slope_deg": 37.5,
+        "susceptibility_score": 0.75,
+        "area": "0.42 sq km",
+        "mean_slope": "37.5 deg",
+        "maximum_slope": "48.2 deg",
+        "relief": "165 m",
+        "twi": "6.2",
+        "lithology": "Interbedded siltstone / shale",
+        "land_cover": "Suburban / Colluvium",
+        "geological_province": "Surma Group (Bhuban Formation)",
+        "distance_to_road": "60 m",
+        "road_cut": "Yes",
+        "mean_annual_precipitation": "2,180 mm"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.733, 23.759],
+            [92.742, 23.760],
+            [92.745, 23.750],
+            [92.735, 23.748],
+            [92.733, 23.759]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1088",
+      "properties": {
+        "slope_unit_id": "AZ-1088",
+        "ward_name": "Durtlang North",
+        "area_ha": 64.0,
+        "mean_slope_deg": 46.1,
+        "susceptibility_score": 0.94,
+        "area": "0.64 sq km",
+        "mean_slope": "46.1 deg",
+        "maximum_slope": "59.4 deg",
+        "relief": "235 m",
+        "twi": "5.4",
+        "lithology": "Massive sandstone escarpment",
+        "land_cover": "Dense forest buffer (Uninhabited)",
+        "geological_province": "Surma Group (Upper Bhuban Member)",
+        "distance_to_road": "920 m",
+        "road_cut": "No",
+        "mean_annual_precipitation": "2,240 mm"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.726, 23.778],
+            [92.735, 23.779],
+            [92.738, 23.771],
+            [92.729, 23.769],
+            [92.726, 23.778]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1203",
+      "properties": {
+        "slope_unit_id": "AZ-1203",
+        "ward_name": "Hunthar",
+        "area_ha": 31.0,
+        "mean_slope_deg": 22.4,
+        "susceptibility_score": 0.32,
+        "area": "0.31 sq km",
+        "mean_slope": "22.4 deg",
+        "maximum_slope": "31.8 deg",
+        "relief": "95 m",
+        "twi": "7.9",
+        "lithology": "Mudstone / weathered shale",
+        "land_cover": "Terraced agriculture / sparse built",
+        "geological_province": "Surma Group (Bhuban Formation)",
+        "distance_to_road": "180 m",
+        "road_cut": "No",
+        "mean_annual_precipitation": "2,110 mm"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.703, 23.742],
+            [92.712, 23.743],
+            [92.715, 23.734],
+            [92.705, 23.732],
+            [92.703, 23.742]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-0964",
+      "properties": {
+        "slope_unit_id": "AZ-0964",
+        "ward_name": "Mission Veng",
+        "area_ha": 28.0,
+        "mean_slope_deg": 14.2,
+        "susceptibility_score": 0.14,
+        "area": "0.28 sq km",
+        "mean_slope": "14.2 deg",
+        "maximum_slope": "21.0 deg",
+        "relief": "68 m",
+        "twi": "8.4",
+        "lithology": "Compact sandstone crest",
+        "land_cover": "Built-up ridge crest",
+        "geological_province": "Surma Group (Bhuban Formation)",
+        "distance_to_road": "25 m",
+        "road_cut": "No",
+        "mean_annual_precipitation": "2,120 mm"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.716, 23.729],
+            [92.725, 23.730],
+            [92.727, 23.721],
+            [92.718, 23.720],
+            [92.716, 23.729]
+          ]
+        ]
+      }
+    }
+  ]
+}

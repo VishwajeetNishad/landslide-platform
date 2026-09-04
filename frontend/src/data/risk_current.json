@@ -1,0 +1,403 @@
+{
+  "type": "FeatureCollection",
+  "meta": {
+    "district_id": "aizawl",
+    "district_name": "Aizawl District, Mizoram",
+    "run_ts": "03 Sep 2026, 10:00 AM",
+    "valid_from": "2026-09-03T10:00:00Z",
+    "valid_to": "2026-09-04T10:00:00Z",
+    "model_version": "tank-stageA-v0.1",
+    "is_demo_data": true
+  },
+  "summary": {
+    "total_slope_units": 5,
+    "high_risk_count": 1,
+    "medium_risk_count": 1,
+    "low_risk_count": 3,
+    "pending_verification_count": 2,
+    "lead_time_hours": 10
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "AZ-1142",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.712, 23.716],
+            [92.721, 23.717],
+            [92.723, 23.708],
+            [92.713, 23.706],
+            [92.712, 23.716]
+          ]
+        ]
+      },
+      "properties": {
+        "slope_unit_id": "AZ-1142",
+        "ward_name": "Melthum",
+        "area_ha": 38.2,
+        "mean_slope_deg": 34.2,
+        "susceptibility_score": 0.82,
+        "probability": 0.72,
+        "confidence_lower": 0.58,
+        "confidence_upper": 0.84,
+        "risk_level": "HIGH",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "estimated_population": 120,
+          "buildings_count": 17,
+          "road_metres": 340,
+          "critical_facility_count": 1
+        },
+        "why": [
+          "Soil water index 142 mm - highest in 30 days",
+          "Forecast rainfall 186 mm in 24 h",
+          "Mean slope 34 deg, road cut 45 m upslope"
+        ],
+        "counterfactual": "40 mm less antecedent rainfall and this would not have fired",
+        "data_quality": {
+          "nearest_gauge_km": 11,
+          "rainfall_confidence": "MODERATE",
+          "label": "Nearest rain gauge: 11 km away | Rainfall confidence: MODERATE"
+        },
+        "has_field_report": true,
+        "field_report_count": 1,
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [92.710, 23.714],
+              [92.714, 23.715],
+              [92.717, 23.704],
+              [92.711, 23.703],
+              [92.710, 23.714]
+            ]
+          ]
+        },
+        "snake_line": {
+          "x_label": "Short-term rainfall, last 3 h (mm)",
+          "y_label": "Soil water index (mm)",
+          "critical_curve": [
+            { "x": 10, "y": 175 },
+            { "x": 20, "y": 165 },
+            { "x": 30, "y": 155 },
+            { "x": 40, "y": 142 },
+            { "x": 50, "y": 130 },
+            { "x": 60, "y": 118 },
+            { "x": 70, "y": 108 }
+          ],
+          "trajectory": [
+            { "ts": "02 Sep 2026, 22:00", "x": 8, "y": 92, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 04:00", "x": 14, "y": 112, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 07:00", "x": 21, "y": 128, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 10:00", "x": 26, "y": 142, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 16:00", "x": 31, "y": 150, "crossed": false, "is_forecast": true },
+            { "ts": "03 Sep 2026, 22:00", "x": 34, "y": 158, "crossed": true, "is_forecast": true },
+            { "ts": "04 Sep 2026, 04:00", "x": 41, "y": 171, "crossed": true, "is_forecast": true }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1147",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.733, 23.759],
+            [92.742, 23.760],
+            [92.745, 23.750],
+            [92.735, 23.748],
+            [92.733, 23.759]
+          ]
+        ]
+      },
+      "properties": {
+        "slope_unit_id": "AZ-1147",
+        "ward_name": "Bawngkawn",
+        "area_ha": 42.0,
+        "mean_slope_deg": 37.5,
+        "susceptibility_score": 0.75,
+        "probability": 0.68,
+        "confidence_lower": 0.52,
+        "confidence_upper": 0.79,
+        "risk_level": "MEDIUM",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "estimated_population": 45,
+          "buildings_count": 6,
+          "road_metres": 120,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Soil water index 128 mm with sustained monsoon infiltration",
+          "Forecast rainfall 145 mm in 24 h",
+          "Road cut 60 m upslope along urban arterial corridor"
+        ],
+        "counterfactual": "25 mm less rainfall would drop probability below 50%",
+        "data_quality": {
+          "nearest_gauge_km": 7,
+          "rainfall_confidence": "HIGH",
+          "label": "Nearest rain gauge: 7 km away | Rainfall confidence: HIGH"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [92.732, 23.757],
+              [92.736, 23.758],
+              [92.739, 23.746],
+              [92.733, 23.745],
+              [92.732, 23.757]
+            ]
+          ]
+        },
+        "snake_line": {
+          "x_label": "Short-term rainfall, last 3 h (mm)",
+          "y_label": "Soil water index (mm)",
+          "critical_curve": [
+            { "x": 10, "y": 175 },
+            { "x": 20, "y": 165 },
+            { "x": 30, "y": 155 },
+            { "x": 40, "y": 142 },
+            { "x": 50, "y": 130 },
+            { "x": 60, "y": 118 },
+            { "x": 70, "y": 108 }
+          ],
+          "trajectory": [
+            { "ts": "02 Sep 2026, 22:00", "x": 6, "y": 85, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 04:00", "x": 12, "y": 102, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 07:00", "x": 18, "y": 115, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 10:00", "x": 22, "y": 128, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 16:00", "x": 25, "y": 136, "crossed": false, "is_forecast": true },
+            { "ts": "03 Sep 2026, 22:00", "x": 28, "y": 144, "crossed": false, "is_forecast": true },
+            { "ts": "04 Sep 2026, 04:00", "x": 33, "y": 152, "crossed": false, "is_forecast": true }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1088",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.726, 23.778],
+            [92.735, 23.779],
+            [92.738, 23.771],
+            [92.729, 23.769],
+            [92.726, 23.778]
+          ]
+        ]
+      },
+      "properties": {
+        "slope_unit_id": "AZ-1088",
+        "ward_name": "Durtlang North",
+        "area_ha": 64.0,
+        "mean_slope_deg": 46.1,
+        "susceptibility_score": 0.94,
+        "probability": 0.95,
+        "confidence_lower": 0.88,
+        "confidence_upper": 0.98,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "estimated_population": 0,
+          "buildings_count": 0,
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Steep natural forest scarp 46 deg with saturated regolith",
+          "High model failure probability (95%) driven purely by extreme terrain slope and rainfall",
+          "Zero population, zero buildings, zero roads downslope - unpopulated wilderness buffer"
+        ],
+        "counterfactual": "If road infrastructure or settlements were built in runout zone, risk classification would escalate to HIGH",
+        "data_quality": {
+          "nearest_gauge_km": 8,
+          "rainfall_confidence": "HIGH",
+          "label": "Nearest rain gauge: 8 km away | Rainfall confidence: HIGH"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [92.724, 23.777],
+              [92.728, 23.778],
+              [92.732, 23.767],
+              [92.725, 23.766],
+              [92.724, 23.777]
+            ]
+          ]
+        },
+        "snake_line": {
+          "x_label": "Short-term rainfall, last 3 h (mm)",
+          "y_label": "Soil water index (mm)",
+          "critical_curve": [
+            { "x": 10, "y": 175 },
+            { "x": 20, "y": 165 },
+            { "x": 30, "y": 155 },
+            { "x": 40, "y": 142 },
+            { "x": 50, "y": 130 },
+            { "x": 60, "y": 118 },
+            { "x": 70, "y": 108 }
+          ],
+          "trajectory": [
+            { "ts": "02 Sep 2026, 22:00", "x": 10, "y": 105, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 04:00", "x": 18, "y": 128, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 07:00", "x": 25, "y": 145, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 10:00", "x": 32, "y": 158, "crossed": true, "is_forecast": false },
+            { "ts": "03 Sep 2026, 16:00", "x": 38, "y": 168, "crossed": true, "is_forecast": true },
+            { "ts": "03 Sep 2026, 22:00", "x": 45, "y": 176, "crossed": true, "is_forecast": true },
+            { "ts": "04 Sep 2026, 04:00", "x": 52, "y": 185, "crossed": true, "is_forecast": true }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-1203",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.703, 23.742],
+            [92.712, 23.743],
+            [92.715, 23.734],
+            [92.705, 23.732],
+            [92.703, 23.742]
+          ]
+        ]
+      },
+      "properties": {
+        "slope_unit_id": "AZ-1203",
+        "ward_name": "Hunthar",
+        "area_ha": 31.0,
+        "mean_slope_deg": 22.4,
+        "susceptibility_score": 0.32,
+        "probability": 0.24,
+        "confidence_lower": 0.12,
+        "confidence_upper": 0.36,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "estimated_population": 15,
+          "buildings_count": 2,
+          "road_metres": 50,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Moderate slope 22 deg with active toe drainage",
+          "Soil water index currently below trigger threshold"
+        ],
+        "counterfactual": "Requires >120 mm additional 24h rainfall to approach critical threshold",
+        "data_quality": {
+          "nearest_gauge_km": 14,
+          "rainfall_confidence": "MODERATE",
+          "label": "Nearest rain gauge: 14 km away | Rainfall confidence: MODERATE"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": null,
+        "snake_line": {
+          "x_label": "Short-term rainfall, last 3 h (mm)",
+          "y_label": "Soil water index (mm)",
+          "critical_curve": [
+            { "x": 10, "y": 175 },
+            { "x": 20, "y": 165 },
+            { "x": 30, "y": 155 },
+            { "x": 40, "y": 142 },
+            { "x": 50, "y": 130 },
+            { "x": 60, "y": 118 },
+            { "x": 70, "y": 108 }
+          ],
+          "trajectory": [
+            { "ts": "02 Sep 2026, 22:00", "x": 4, "y": 55, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 04:00", "x": 7, "y": 68, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 07:00", "x": 9, "y": 76, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 10:00", "x": 11, "y": 84, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 16:00", "x": 14, "y": 92, "crossed": false, "is_forecast": true },
+            { "ts": "03 Sep 2026, 22:00", "x": 16, "y": 98, "crossed": false, "is_forecast": true },
+            { "ts": "04 Sep 2026, 04:00", "x": 18, "y": 104, "crossed": false, "is_forecast": true }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "AZ-0964",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [92.716, 23.729],
+            [92.725, 23.730],
+            [92.727, 23.721],
+            [92.718, 23.720],
+            [92.716, 23.729]
+          ]
+        ]
+      },
+      "properties": {
+        "slope_unit_id": "AZ-0964",
+        "ward_name": "Mission Veng",
+        "area_ha": 28.0,
+        "mean_slope_deg": 14.2,
+        "susceptibility_score": 0.14,
+        "probability": 0.08,
+        "confidence_lower": 0.03,
+        "confidence_upper": 0.15,
+        "risk_level": "LOW",
+        "verification_status": "PENDING_VERIFICATION",
+        "exposure_summary": {
+          "estimated_population": 0,
+          "buildings_count": 0,
+          "road_metres": 0,
+          "critical_facility_count": 0
+        },
+        "why": [
+          "Low gradient ridge 14 deg on stable sandstone bedrock",
+          "Adequate natural storm drainage and low antecedent moisture"
+        ],
+        "counterfactual": "Exhibits high geotechnical stability under all forecast scenarios",
+        "data_quality": {
+          "nearest_gauge_km": 5,
+          "rainfall_confidence": "HIGH",
+          "label": "Nearest rain gauge: 5 km away | Rainfall confidence: HIGH"
+        },
+        "has_field_report": false,
+        "field_report_count": 0,
+        "runout_envelope": null,
+        "snake_line": {
+          "x_label": "Short-term rainfall, last 3 h (mm)",
+          "y_label": "Soil water index (mm)",
+          "critical_curve": [
+            { "x": 10, "y": 175 },
+            { "x": 20, "y": 165 },
+            { "x": 30, "y": 155 },
+            { "x": 40, "y": 142 },
+            { "x": 50, "y": 130 },
+            { "x": 60, "y": 118 },
+            { "x": 70, "y": 108 }
+          ],
+          "trajectory": [
+            { "ts": "02 Sep 2026, 22:00", "x": 3, "y": 42, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 04:00", "x": 5, "y": 50, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 07:00", "x": 6, "y": 55, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 10:00", "x": 7, "y": 60, "crossed": false, "is_forecast": false },
+            { "ts": "03 Sep 2026, 16:00", "x": 9, "y": 66, "crossed": false, "is_forecast": true },
+            { "ts": "03 Sep 2026, 22:00", "x": 10, "y": 70, "crossed": false, "is_forecast": true },
+            { "ts": "04 Sep 2026, 04:00", "x": 12, "y": 75, "crossed": false, "is_forecast": true }
+          ]
+        }
+      }
+    }
+  ]
+}
