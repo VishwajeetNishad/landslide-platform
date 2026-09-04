@@ -5,7 +5,7 @@ Ye doc `docs/API_CONTRACT.md` ko **replace nahi** karta. Contract batata hai
 hai*. Contract hi source of truth hai — field ka naam kabhi doubt ho toh
 wahin dekhna.
 
-Aakhri update: 4 September 2026, V7 merge ke baad.
+Aakhri update: 4 September 2026, V9 merge ke baad.
 
 ---
 
@@ -18,11 +18,11 @@ Aakhri update: 4 September 2026, V7 merge ke baad.
 | `GET /health` | Backend + DB theek hai ya nahi | ✅ **LIVE** |
 | `GET /docs` | Swagger UI — browser mein API khud test karo | ✅ **LIVE** |
 | `POST /api/v1/predictions/ingest` | Rudra ka output andar aata hai | ✅ LIVE (tumhara kaam nahi) |
-| `GET /api/v1/risk/current` | **Tumhara main dashboard feed** | ⬜ V9 — abhi nahi |
+| `GET /api/v1/risk/current` | **Tumhara main dashboard feed** | ✅ **LIVE** |
 
-Matlab **map ab asli database se ban sakta hai.** Risk colours, decision card
-aur snake plot ke liye abhi bhi `data/sample/mock_risk_api_response.json` use
-karo — V9 aane par sirf `fetch` ka URL badlega, shape same rahega.
+Matlab **map aur risk dashboard ab asli database se ban sakta hai.** `fetch` ko
+`http://localhost:3000/api/v1/risk/current?district=aizawl` par point karo —
+shape exactly `data/sample/mock_risk_api_response.json` jaisa hai.
 
 ---
 
@@ -129,9 +129,26 @@ badlega.
 aspect_sin/aspect_cos, waghera). Ye pop-up mein dikhane ke liye hain — poori
 list `API_CONTRACT.md` §4a mein hai.
 
+Aur `risk/current` ka `summary` aisa aata hai (ye bhi asli output hai):
+
+```json
+{
+  "total_slope_units": 3,
+  "high_risk_count": 2,
+  "medium_risk_count": 0,
+  "low_risk_count": 1,
+  "risk_not_computed_count": 0,
+  "pending_verification_count": 3,
+  "lead_time_hours": 10
+}
+```
+
+Dhyaan do: **paanch** count hain, chaar nahi. `risk_not_computed_count`
+neeche §5 mein samjhaya hai — usko `low_risk_count` mein mat jodna.
+
 ---
 
-## 5. Paanch cheezein jo galat karna aasaan hai
+## 5. Chhe cheezein jo galat karna aasaan hai
 
 **`properties.slope_unit_id` use karna, `properties.id` nahi.** Feature ke
 paas apna `id` member already hai (`feature.id`). `properties.id` likhne se
@@ -157,6 +174,19 @@ AZ-1088).
 calculate karta hai, toh ye number bharosemand hai — par `is_mock: true`
 wale unit ki geometry hand-drawn hai, toh area ko "measurement" bolkar
 quote nahi karna.
+
+**`risk_level` `null` ho toh use GREEN mat karna.** `risk/current` mein
+`properties.risk_level` chaar values de sakta hai: `HIGH`, `MEDIUM`, `LOW`,
+ya `null`. `null` ka matlab **"low risk" nahi** hai — matlab hai *us slope
+ka exposure nikala hi nahi gaya*, toh risk ka jawab hi nahi hai. Usko
+**grey / hatched** karo aur legend mein "Not assessed" likho.
+
+Kyun ye itna matter karta hai: AZ-1088 ka `LOW` ek **finding** hai — runout
+envelope draw hua, intersect hua, neeche koi nahi nikla. `null` ek
+**absence** hai. Dono ko green karne ka matlab hai officer ko dikhana ki
+"yahan koi khatra nahi" jab humne dekha hi nahi. `summary` mein iske liye
+`risk_not_computed_count` alag field hai — usko summary card par dikhana,
+`low_risk_count` mein add nahi karna.
 
 ---
 

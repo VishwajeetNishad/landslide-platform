@@ -24,6 +24,7 @@ import { config } from './core/config.js';
 import { closePool, setDbLogger } from './db/pool.js';
 import { registerMetaRoutes } from './routes/meta.js';
 import { registerPredictionRoutes } from './routes/predictions.js';
+import { registerRiskRoutes } from './routes/risk.js';
 import { registerSlopeUnitRoutes } from './routes/slope_units.js';
 
 /**
@@ -261,6 +262,7 @@ export async function buildApp({ logger = true } = {}) {
   await registerMetaRoutes(app);
   await registerSlopeUnitRoutes(app);
   await registerPredictionRoutes(app);
+  await registerRiskRoutes(app);
 
   return app;
 }

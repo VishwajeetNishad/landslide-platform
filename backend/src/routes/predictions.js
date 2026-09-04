@@ -45,6 +45,7 @@
 
 import { config } from '../core/config.js';
 import { getPool, query, withTransaction } from '../db/pool.js';
+import { calculateRiskLevel } from '../exposure/risk.js';
 
 /**
  * Same 503 as the slope unit routes, and for the same reason: it agrees
@@ -277,7 +278,15 @@ const ingestResponseSchema = {
     exposures_stored: { type: 'integer' },
     is_demo_data: { type: 'boolean' },
     mock_slope_units: { type: 'integer' },
-    risk_level: { type: ['string', 'null'] },
+    risk_levels: {
+      type: 'object',
+      properties: {
+        HIGH: { type: 'integer' },
+        MEDIUM: { type: 'integer' },
+        LOW: { type: 'integer' },
+        not_computed: { type: 'integer' },
+      },
+    },
     note: { type: 'string' },
     warnings: { type: 'array', items: { type: 'string' } },
   },
@@ -551,9 +560,10 @@ const INSERT_RUN = `
   RETURNING id
 `;
 
-// risk_level is deliberately absent from this list, so the column stays
-// NULL. NULL means "exposure not yet computed" -- V8 fills it in. A
-// default of 'LOW' would be a lie that reads as reassurance, and a
+// risk_level is deliberately absent from this list, so the column starts
+// NULL. NULL means "exposure not yet computed" -- V8 updates it later in
+// this same transaction, but only for predictions that carry an exposure
+// block. A default of 'LOW' would be a lie that reads as reassurance, and a
 // default of 'HIGH' would be a lie that reads as an alarm.
 const INSERT_PREDICTION = `
   INSERT INTO prediction (
@@ -579,6 +589,12 @@ const INSERT_EXPOSURE = `
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `;
 
+const UPDATE_PREDICTION_RISK = `
+  UPDATE prediction
+  SET risk_level = $1
+  WHERE id = $2
+`;
+
 export async function registerPredictionRoutes(app) {
   app.post(
     '/api/v1/predictions/ingest',
@@ -595,8 +611,10 @@ export async function registerPredictionRoutes(app) {
           '**Answers 422, not 400**, when the body is well-formed JSON whose meaning is wrong ' +
           '(a probability of 1.5, an unknown `slope_unit_id`, a confidence band that does not ' +
           'contain its own estimate).\n\n' +
-          '**`risk_level` is never accepted from the caller** and is left NULL for V8 to compute ' +
-          'from probability and exposure. `verification_status` starts at `PENDING_VERIFICATION` ' +
+          '**`risk_level` is never accepted from the caller.** The backend computes it from ' +
+          'probability and exposure (V8) for every prediction that carries an `exposure` block, ' +
+          'and leaves it NULL for every prediction that does not -- NULL means "exposure not yet ' +
+          'computed", never "low risk". `verification_status` starts at `PENDING_VERIFICATION` ' +
           'and only a named officer can change it.',
         body: ingestBodySchema,
         response: { 201: ingestResponseSchema },
@@ -679,6 +697,11 @@ export async function registerPredictionRoutes(app) {
         let runouts = 0;
         let exposures = 0;
 
+        // What risk_level each prediction ended up with, so the 201 can
+        // report what was actually written instead of asserting a value.
+        // `not_computed` counts the rows left NULL.
+        const risks = { HIGH: 0, MEDIUM: 0, LOW: 0, not_computed: 0 };
+
         for (const p of body.predictions) {
           const { rows: predRows } = await client.query(INSERT_PREDICTION, [
             runId,
@@ -739,9 +762,31 @@ export async function registerPredictionRoutes(app) {
             ]);
             exposures += 1;
           }
+
+          // Step V8: risk_level = probability x consequence, written in the
+          // SAME transaction as the prediction it belongs to.
+          //
+          // ONLY when an exposure row was actually written. Migration 004
+          // defines NULL as "exposure not yet computed", and
+          // calculateRiskLevel() cannot tell those two cases apart:
+          // getExposureBand() returns 'low' both for a computed exposure that
+          // came out empty and for an exposure block that was never sent at
+          // all. Calling it unconditionally stored LOW for a slope nobody has
+          // looked below yet, byte-identical to AZ-1088, where zero exposure
+          // is a finding backed by a runout envelope. "We did not look" would
+          // have rendered as "nobody is there" -- a confident reassurance
+          // with nothing behind it, which is the same failure class migration
+          // 008's validity checks exist to prevent.
+          if (p.exposure) {
+            const riskLevel = calculateRiskLevel(p.probability, p.exposure);
+            await client.query(UPDATE_PREDICTION_RISK, [riskLevel, predictionId]);
+            risks[riskLevel] += 1;
+          } else {
+            risks.not_computed += 1;
+          }
         }
 
-        return { runId, runouts, exposures };
+        return { runId, runouts, exposures, risks };
       });
 
       reply.code(201);
@@ -754,13 +799,21 @@ export async function registerPredictionRoutes(app) {
         is_demo_data: isDemoData,
         mock_slope_units: mockUnits,
 
-        // Returned explicitly as null rather than omitted, so nobody
-        // reads a missing key as "risk was computed and came out fine".
-        risk_level: null,
+        // What was actually stored, counted from the rows.
+        //
+        // This used to be a single `risk_level: null` under a note saying the
+        // risk had been computed -- the reply contradicted both the note above
+        // it and the database. A count per band cannot drift the same way,
+        // and `not_computed` is the number Rudra needs: predictions he sent
+        // without an `exposure` block have no risk and will not appear on the
+        // dashboard as LOW.
+        risk_levels: stored.risks,
         note:
-          'Stored with risk_level NULL and verification_status PENDING_VERIFICATION. ' +
-          'Risk is computed from probability and exposure by the risk step, and verification ' +
-          'requires a named officer.',
+          `Stored ${body.predictions.length} prediction(s) at verification_status ` +
+          'PENDING_VERIFICATION; verification requires a named officer. ' +
+          'risk_level is computed from probability and exposure where an exposure block was ' +
+          'sent, and left NULL where it was not -- NULL means "exposure not yet computed", ' +
+          'not "low risk".',
         warnings,
       };
     },
