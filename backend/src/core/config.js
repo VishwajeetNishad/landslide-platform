@@ -84,4 +84,8 @@ export const config = {
   // wapas 4326 mein store karo.
   storageSrid: 4326,
   metricSrid: 32646,
+
+  // ---------- Security / JWT ----------
+  jwtSecret: process.env.JWT_SECRET ?? 'landslide-platform-ner-secret-key-2026',
+  jwtExpiresInSeconds: Number(process.env.JWT_EXPIRES_IN ?? 86400),
 };
