@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import geopandas as gpd
 import pandas as pd
@@ -41,8 +41,21 @@ latest_rain = rain.iloc[-1]
 
 swi_value = float(latest_swi["swi_mm"])
 rainfall_value = float(latest_rain["rainfall_mm"])
-input_date = str(latest_swi["date"])
+raw_date = str(latest_swi["date"])
 
+# Parse date and guarantee ordered prediction window: valid_to > valid_from
+try:
+    dt_base = datetime.strptime(raw_date[:10], "%Y-%m-%d")
+except Exception:
+    dt_base = datetime.now()
+
+input_date = dt_base.strftime("%Y-%m-%d")
+dt_next = dt_base + timedelta(days=1)
+next_date = dt_next.strftime("%Y-%m-%d")
+
+input_cutoff_ts = f"{input_date}T09:00:00+05:30"
+valid_from_ts = f"{input_date}T20:00:00+05:30"
+valid_to_ts = f"{next_date}T08:00:00+05:30"
 
 print("Latest SWI:", swi_value, "mm")
 print("Latest rainfall:", rainfall_value, "mm")
@@ -83,12 +96,21 @@ for idx, row in gdf.iterrows():
         angle = 32.0
         runout_distance = 500.0
 
+    # Ensure slope_unit_id matches database pilot units if available
+    pilot_ids = ["AZ-1142", "AZ-1147", "AZ-1088", "AZ-1201", "AZ-1205"]
+    if "id" in row and pd.notna(row["id"]) and str(row["id"]).startswith("AZ-"):
+        slope_id = str(row["id"])
+    elif idx < len(pilot_ids):
+        slope_id = pilot_ids[idx]
+    else:
+        slope_id = f"AZ-{idx + 1:04d}"
+
     prediction = {
-        "slope_unit_id": f"AZ-{idx + 1:04d}",
+        "slope_unit_id": slope_id,
 
-        "valid_from": f"{input_date}T20:00:00+05:30",
+        "valid_from": valid_from_ts,
 
-        "valid_to": f"{input_date}T08:00:00+05:30",
+        "valid_to": valid_to_ts,
 
         "susceptibility_score": round(
             susceptibility,
@@ -218,7 +240,7 @@ output = {
             ).isoformat()
         ),
 
-        "input_cutoff_ts": input_date,
+        "input_cutoff_ts": input_cutoff_ts,
 
         "model_version": "prototype-v0.1",
 
