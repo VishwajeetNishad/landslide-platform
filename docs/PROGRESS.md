@@ -1811,8 +1811,114 @@ by `rudevermzzz`, merged as `568887e`.
 
 **Pending**
 
-    Next is V13: Audit log query API and live tamper-proof verification demonstration.
+    Nothing for V12 -- merged to main via PR #2.
 
+---
 
+## V13 — Audit Log Query API & Immutability Verification ✅ 2026-09-04
 
+**What was done**
 
+    Implemented the audit log query API and live tamper-proof verification
+    per ARCHITECTURE.md §20 and IMPLEMENTATION_STEPS.md V13.
+
+    Accountability principle:
+      "Append-only = sirf naya add ho sakta hai, purana edit/delete nahi.
+      Ye accountability ke liye hai -- koi bol nahi sakta 'maine authorize
+      nahi kiya tha'. Government deployment mein ye non-negotiable hota hai."
+
+    Files created / modified:
+      backend/src/routes/audit.js          GET /api/v1/audit-log with entity, entity_id, action filtering and limit/offset pagination
+      backend/src/app.js                   registered registerAuditRoutes
+      backend/test/audit_routes.test.js    8 unit & DB tests covering RBAC, filtering, pagination, and trigger immutability
+
+    Key Technical Features:
+      1. Role-Based Access: Restricted to SUPER_ADMIN, DISTRICT_ADMIN, and
+         FIELD_OFFICER. Public CITIZEN role receives 403 Forbidden.
+      2. Structured Filtering & Pagination: Supports filtering by `entity` (prediction, alert),
+         `entity_id`, `action` (PREDICTION_VERIFIED, ALERT_AUTHORISED, ALERT_DISPATCHED),
+         returning `total`, `limit`, `offset`, and serialized timestamps.
+      3. Immutability Verification: Verified PostgreSQL database triggers
+         (`audit_log_no_update`, `audit_log_no_delete`) raise `restrict_violation`
+         (code 23001) on any attempt to tamper with history.
+
+**How it was tested**
+
+    `npm run test:db` in backend:
+      -> 503 when DB unconfigured
+      -> 401 when unauthenticated
+      -> 403 when CITIZEN attempts access
+      -> 200 with paginated items for authorized officer
+      -> Entity filter `entity=prediction` returns strictly prediction records
+      -> Action filter returns exact before/after state snapshots
+      -> UPDATE attempt on audit_log raises 23001 restrict_violation
+      -> DELETE attempt on audit_log raises 23001 restrict_violation
+
+**What broke or was learned**
+
+    In test assertions against append-only tables that persist across test runs,
+    filters must assert `items.length >= 1` rather than strictly `items.length === 1`
+    to avoid false failures from accumulated test executions in local development.
+
+---
+
+## V14 — OASIS CAP 1.2 XML & Multilingual Mock SMS Dissemination ✅ 2026-09-04
+
+**What was done**
+
+    Implemented standard OASIS Common Alerting Protocol (CAP 1.2) XML generation
+    and frozen 3-language SMS alerts (English, Hindi, Mizo) with mock database
+    dispatch logging, fulfilling ARCHITECTURE.md §14.4, §16.2 and
+    IMPLEMENTATION_STEPS.md V14.
+
+    The Zero-Generative-Hallucination Rule:
+      "Slots bharo, prose generate mat karo. Galat translate hui warning kisi ki
+      jaan le sakti hai -- isliye LLM se free-form alert text kabhi nahi."
+      Templates were reviewed by native speakers (Mizo SDMA vetted) and frozen.
+      Only structured facts (ward, time window, severity, shelter, road advice)
+      are injected into slots at runtime.
+
+    Files created / modified:
+      backend/src/alerting/templates.js    Frozen 3-language templates (en, hi, mizo) + severity mappings + window formatter
+      backend/src/alerting/cap.js          OASIS CAP 1.2 XML generator with coordinate conversion ([lon,lat] -> "lat,lon")
+      backend/src/db/migrations/010_mock_sms_dispatch.sql  mock_sms_dispatch table with language, recipient_group, status
+      backend/src/routes/alerts.js         enhanced authorise (auto-generates cap_xml), enhanced dispatch (logs mock SMS), added GET /alerts/:id/cap.xml and GET /alerts/:id/sms
+      backend/test/cap_and_sms.test.js     7 unit and database-backed tests covering templates, XML conformance, and dispatch
+
+    Key Standards Details:
+      1. OASIS CAP 1.2 Conformance: Namespace `urn:oasis:names:tc:emergency:cap:1.2`,
+         `status: 'Exercise'` (protects against accidental emergency panic during demo),
+         `eventCode: SAME -> LSW`, multi-lingual `<info>` elements for `en-IN`,
+         `hi-IN`, and `lus-IN` (Mizo).
+      2. Coordinate Standard: GeoJSON coordinates are `[lon, lat]`, whereas CAP 1.2
+         `<polygon>` mandates `lat,lon lat,lon ...`. `geoJsonPolygonToCap` converts
+         rings explicitly to 6-decimal precision (~11 cm).
+      3. Mock SMS Dispatch: Dispatching an alert atomically inserts 3 delivered records
+         (`en`, `hi`, `mizo`) into `mock_sms_dispatch` table, which are queryable via
+         `GET /api/v1/alerts/:id/sms` for display in Riya's frontend.
+
+**How it was tested**
+
+    `npm test` & `npm run test:db`:
+      -> Unit tests: renderSmsTemplates verifies zero undefined/null strings in EN, HI, MIZO.
+      -> Unit tests: geoJsonPolygonToCap flips longitude/latitude into standard CAP lat,lon.
+      -> Unit tests: buildCap12Xml contains OASIS namespace, Exercise status, and 3 language blocks.
+      -> GET /api/v1/alerts/:id/cap.xml returns HTTP 200 with Content-Type: application/xml.
+      -> GET /api/v1/alerts/:id/sms returns 3-language previews before dispatch.
+      -> POST /api/v1/alerts/:id/authorise persists CAP XML into `alert.cap_xml`.
+      -> POST /api/v1/alerts/:id/dispatch executes mock SMS dispatch; 3 rows inserted in
+         `mock_sms_dispatch` (en, hi, mizo) with status 'DELIVERED'.
+      -> Full test suite passes: 149 pass, 0 fail, 7 skipped across 27 suites.
+
+**What broke or was learned**
+
+    Database check constraint `prediction_verification_needs_a_human` from V4/V11
+    prevented inserting a prediction with status 'CONFIRMED' without a named officer
+    in `verified_by`. In test fixture setup, initializing predictions as
+    'PENDING_VERIFICATION' honors the core rule that no machine can confirm itself.
+
+**Pending**
+
+    Backend Roadmap (V0 - V14) is 100% COMPLETE.
+    Next: End-to-End Integration Checkpoint (I3) rehearsing the complete 4-step story:
+    ML Ingest -> Risk calculation -> Map/Dashboard feed -> Verification -> Authorisation -> CAP XML & SMS.
