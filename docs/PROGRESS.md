@@ -1963,3 +1963,177 @@ Commits `c8d11d8` -> merge `b263808`
 
     Phase 2: Frontend Dashboard (Riya: Steps F1-F7).
     Demo seed script: `scripts/seed_demo.js` (Vishwajeet).
+
+---
+
+## R3-R8 — ML prototype pipeline reviewed (Rudra) ⚠️ 2026-09-04
+
+Rudra ke commits (`ee84603`, `d5fff3c`) pehle se hi main par the - mera
+`git merge` no-op nikla (`main..origin/r2-dem-terrain` khaali). 9 files, 832
+insertions, sab `ml/` ke andar. Backend aur frontend ka ek bhi file nahi chhua.
+Secret scan clean.
+
+Review ke DAURAN main par ek aur commit aa gaya: `c3ef8f0` (fix(ml): ordered
+valid window, full ISO-8601 cutoff, pilot slope unit mapping). Usne neeche
+ke issue 2 aur 3 theek kar diye, aur issue 1 ko aadha theek kiya. Ye entry
+dono states likhti hai - kya mila, aur fix ke baad kya bacha.
+
+**What was done**
+
+    Rudra ne poori ML script chain push kar di - R3 se R8 tak sab steps ka
+    code maujood hai:
+
+      R3  ml/slope_units/slope_units.py       WhiteboxTools chain: fill_depressions
+                                              -> d8_pointer -> d8_flow_accumulation
+                                              -> extract_streams (threshold 100)
+                                              -> hillslopes -> raster_to_vector_polygons,
+                                              phir make_valid() aur EPSG:4326
+      R4  ml/rainfall/rainfall_ingest.py      column check, date/number coercion,
+                                              negative rainfall reject, dedupe by date
+          ml/rainfall/rainfall_sample.csv     30 din, saaf-saaf SIMULATED labelled
+      R5  ml/tank/three_tank.py               three-tank SWI, fixed params
+                                              K1=0.35 K2=0.15 K3=0.05, SWI = s1+s2+s3
+      R6  ml/susceptibility/train_prototype.py     1000 simulated rows, LightGBM
+          ml/susceptibility/predict_susceptibility.py  zonal means + Booster predict
+      R7  ml/runout/runout.py                 angle of reach 32 deg, 500 m buffer
+                                              slope-unit centroids ke around, EPSG:32646
+      R8  ml/final_output/build_final_output.py    ingest contract JSON builder
+
+    Honesty ke maamle mein Rudra ne theek kaam kiya, aur ye asli tareef hai:
+
+      - train_prototype.py ka header khud bolta hai "Do NOT use these metrics
+        as real-world model accuracy" aur "The ROC-AUC is NOT real-world
+        validation". Labels ek formula se bane hain aur wahi formula model
+        seekh raha hai - toh AUC construction ke hisaab se meaningless hai,
+        aur ye baat script khud likhti hai.
+      - Har output par data_source: SIMULATED aur
+        model_status: PROTOTYPE_NOT_VALIDATED.
+      - risk_level aur verification_status kahin emit NAHI kiye. Final print
+        seedha bolta hai "Risk level: NOT GENERATED". Ye ARCHITECTURE section
+        13 ka core rule hai aur usne khud se follow kiya.
+      - runout ka source_citation "PLACEHOLDER" likha hai, jhootha citation
+        gadha nahi.
+      - ml/.gitignore data/ aur saare generated outputs block karta hai, toh
+        repo mein derived artifacts nahi ghuse.
+
+**How it was tested**
+
+    Scripts LOCALLY RUN NAHI HO SAKE. Ye saaf-saaf likh raha hoon, "tested"
+    nahi bol raha:
+      - slope_units.py, predict_susceptibility.py, runout.py sabko
+        ml/data/dem/*.tif chahiye. Woh folder gitignored hai (theek hai) aur
+        is machine par maujood nahi. Iska matlab R3/R6/R7 ka output is repo
+        se reproduce nahi kiya ja sakta - sirf code padha gaya hai.
+      - Isliye contract shape HAATH SE banaya, Rudra ke build_final_output.py
+        ke exact field values se, aur asli V7 ingest endpoint par POST kiya
+        (DB-connected server, port 8023). Ye padhne se behtar hai - validator
+        ne khud bola kya galat hai.
+
+    Ingest results, step by step. Har baar HTTP 422, kuch bhi likha nahi gaya:
+
+      1. Teen schema problems ek saath:
+           forecast_run.input_cutoff_ts: must match format "date-time"
+           data_quality.rainfall_confidence: must be equal to one of the allowed values
+           runout.envelope_geojson: must be object
+      2. valid_to must be after valid_from.
+      3. Unknown slope_unit_id: AZ-0001.
+
+    Teeno fix karke, asli id AZ-1142 daal kar POST kiya -> HTTP 201,
+    forecast_run_id 346. Us reply ne chautha, sabse chhupa hua problem dikhaya:
+      risk_levels: { HIGH: 0, MEDIUM: 0, LOW: 1, not_computed: 0 }
+    probability 0.9412 par bhi LOW. Kyunki Rudra ka exposure block bheja gaya
+    hai lekin uske andar sab None hai - aur aaj ke V8/V9 fix ke hisaab se
+    "block present" ka matlab hai "exposure compute ho gaya, kuch nahi mila",
+    jo LOW band karta hai. Yahi woh confident-LOW galti hai jo aaj subah
+    theek ki thi, dusre darwaze se wapas aa rahi hai.
+
+    Phir `c3ef8f0` ke baad ka shape dobara POST kiya (cutoff offset ke saath,
+    ordered window, pilot id list). Uske pilot_ids list ka chautha entry
+    AZ-1201 hai:
+      422 Unknown slope_unit_id: AZ-1201
+    Kyunki DB ke paanch id hain AZ-0964, AZ-1088, AZ-1142, AZ-1147, AZ-1203.
+    List mein AZ-1201 aur AZ-1205 hain, jo maujood nahi; aur AZ-0964 aur
+    AZ-1203, jo maujood hain, list mein nahi. Yani 5 units par bhi ingest
+    tootega, chahe window aur cutoff theek ho.
+
+    Test runs (model_version 'test-rudra-shape', 'test-rudra-postfix') turant
+    delete kar diye. DB mein ab wahi 5 runs hain jo pehle the.
+
+**What broke or was learned**
+
+    Paanch blocking issues mile, sab R8 ke contract builder mein. Pipeline ka
+    science theek hai; jo tootta hai woh handoff hai. Review ke dauran
+    `c3ef8f0` ne 2 aur 3 theek kar diye; 1, 4, 5 ab bhi khule hain.
+
+    1. slope_unit_id INVENT ho raha tha. Line thi: f"AZ-{idx + 1:04d}" -
+       matlab AZ-0001, AZ-0002... Ek bhi DB id se match nahi karti thi.
+       `c3ef8f0` ne ise AADHA theek kiya: ab pehle row["id"] dekhta hai
+       (sahi tareeka), warna ek hardcoded pilot_ids list use karta hai,
+       warna wapas index par gir jaata hai. Par woh list galat hai -
+       ["AZ-1142","AZ-1147","AZ-1088","AZ-1201","AZ-1205"] - jismein
+       AZ-1201 aur AZ-1205 DB mein nahi hain, aur AZ-0964 aur AZ-1203 jo
+       hain woh list mein nahi. Empirically 422 mila. Sahi fix: fallback
+       list hataao. Id sirf slope-unit file se aaye; na mile toh script
+       fail ho, kyunki galat id par prediction likhna matlab galat pahaadi
+       ko warning dena.
+
+    2. valid_to, valid_from se PEHLE tha (dono same date, 08:00 vs 20:00).
+       `c3ef8f0` ne theek kar diya - ab valid_to agle din ka hai, window
+       20:00 -> next 08:00. FIXED.
+
+    3. input_cutoff_ts nanga date tha ("2025-09-30"), UTC offset ke bina.
+       `c3ef8f0` ne "T09:00:00+05:30" laga diya. FIXED.
+
+    4. exposure block bheja ja raha hai jismein sab None hai. Ye demo ki
+       central argument ko chupchaap tod deta hai: har unit LOW ban jaata
+       hai, chahe probability 0.94 ho. Sahi fix - exposure key POORI hata
+       do. Tab risk NULL rehta hai aur dashboard "Not assessed" dikhata hai.
+       not_computed bucket isi ke liye banaya tha.
+
+    5. susceptibility_score aur probability ko EK HI value di gayi hai:
+         gdf["susceptibility_score"] = probability
+         gdf["probability"] = probability
+       Contract section 5 mein ye do alag cheezein hain - susceptibility
+       static terrain hai (barish se nahi badalta), probability aaj ka
+       time-varying forecast hai. Ek karne se "kal barish rukne par kya hoga"
+       wala counterfactual dikhana hi impossible ho jaata hai.
+
+    Aur cheezein, blocking nahi par pending:
+      - confidence_lower/upper ek fixed +-0.10 margin hai, uncertainty
+        estimate nahi. Band jhootha nahi hai par matlab kuch nahi rakhta.
+      - drivers hardcoded constants hain (0.30, 0.25, 0.20, 0.15), SHAP
+        nahi. Yani "kyun" wala jawab har unit ke liye same aayega.
+      - Sirf 4 features use ho rahe hain. R2 ka aspect sin/cos, TWI aur
+        relief bane the par model tak pahunche nahi.
+      - R2 ke Pending mein maanga gaya _provenance block ab bhi missing hai.
+      - zonal_mean har exception ko chupchaap NaN bana deta hai. Ek galat
+        raster path aur saara column NaN - aur script normal dikhegi.
+      - runout ka 500 m aur 32 deg dono hardcoded hain; angle of reach se
+        distance actually calculate nahi ho raha, sirf constant likha hai.
+      - build_final_output.py runout ko INDEX se match karta hai
+        (runout.iloc[idx]), id se nahi. Dono file ka order badla toh envelope
+        galat slope unit par chipak jaayega, aur error kahin nahi aayega.
+
+**Pending**
+
+    [R8] Rudra ko bheja jaana hai: teen khule blocking issues, is order mein.
+         Inke bina ML output ingest ho hi nahi sakta, matlab demo ka data
+         backend tak pahunchega hi nahi.
+           (1) pilot_ids fallback list hataao - AZ-1201/AZ-1205 maujood nahi,
+               AZ-0964/AZ-1203 chhoot gaye. Id sirf slope-unit file se aaye.
+           (4) exposure key POORI hata do, warna har unit LOW ban jaayega.
+           (5) probability aur susceptibility_score alag karo.
+         Issue 2 (valid_to) aur 3 (cutoff offset) `c3ef8f0` mein fix ho gaye.
+    [R3] slope_units_clean.geojson mujhe (Vishwajeet) ko bhejna hai. Abhi DB
+         mein paanch mock slope units hain. Jab tak asli file nahi aati,
+         ingest ke liye id ka koi common source nahi hai.
+    [R6] Real landslide inventory nahi hai, toh slope-matched negatives ka
+         jo trap IMPLEMENTATION_STEPS line 391 mein likha tha woh abhi
+         address nahi hua. Prototype ke liye acceptable hai kyunki labels
+         SIMULATED marked hain - par viva mein ye poocha jaayega.
+    [R7] Exposure intersection (R7 ka doosra half) nahi bana. Woh PostGIS
+         ka kaam hai aur mere paas hai - DEMO_PLAN section 3 mein Overpass
+         wala plan likha hai.
+    [R3/R6/R7] Scripts is repo se reproduce nahi ho sakte kyunki ml/data/
+         gitignored hai. Demo se pehle Rudra ko chahiye ki DEM ka source aur
+         licence docs mein likhe, taaki koi aur bhi chala sake.
