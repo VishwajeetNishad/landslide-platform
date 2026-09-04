@@ -43,7 +43,10 @@
  * querystring and path failures at 400 -- see the long note there.
  */
 
+import { authenticate } from '../core/auth.js';
 import { config } from '../core/config.js';
+import { assertDistrictAccess, requireRole, ROLES } from '../core/rbac.js';
+import { recordAudit } from '../core/audit.js';
 import { getPool, query, withTransaction } from '../db/pool.js';
 import { calculateRiskLevel } from '../exposure/risk.js';
 
@@ -818,4 +821,130 @@ export async function registerPredictionRoutes(app) {
       };
     },
   );
+
+  // ---------- PATCH /api/v1/predictions/:id/verification (Step V11) ----------
+  const verificationRouteOptions = {
+    preHandler: [
+      authenticate,
+      requireRole(ROLES.SUPER_ADMIN, ROLES.DISTRICT_ADMIN, ROLES.FIELD_OFFICER),
+    ],
+    schema: {
+      tags: ['predictions'],
+      summary: 'Human verification of an AI prediction',
+      description:
+        'Allows an authorized officer to verify, mark as false positive, or request review ' +
+        'for a prediction. Enforces database constraint: verification requires a named user and timestamp. ' +
+        'Creates an immutable entry in the audit_log table.',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', pattern: '^[0-9]+$' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['CONFIRMED', 'FALSE_POSITIVE', 'NEEDS_REVIEW'],
+          },
+          note: { type: 'string', maxLength: 1000 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            slope_unit_id: { type: 'string' },
+            probability: { type: 'number' },
+            risk_level: { type: ['string', 'null'] },
+            verification_status: { type: 'string' },
+            verified_by: { type: 'integer' },
+            verified_by_name: { type: 'string' },
+            verified_at: { type: 'string' },
+            verification_note: { type: ['string', 'null'] },
+          },
+        },
+      },
+    },
+  };
+
+  const handleVerification = async (request) => {
+    requireDatabase();
+    const predictionId = Number(request.params.id);
+    const { status, note } = request.body;
+
+    // 1. Fetch prediction and verify district scoping
+    const { rows: pRows } = await query(
+      `SELECT p.id, p.slope_unit_id, p.probability, p.risk_level, p.verification_status,
+              s.district_id
+       FROM prediction p
+       JOIN slope_unit s ON s.id = p.slope_unit_id
+       WHERE p.id = $1`,
+      [predictionId],
+    );
+
+    if (pRows.length === 0) {
+      const err = new Error(`No prediction with id '${predictionId}'`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const prediction = pRows[0];
+
+    // Enforce district scoping (e.g. Aizawl admin cannot verify Sikkim prediction)
+    assertDistrictAccess(request.user, prediction.district_id);
+
+    // 2. Perform update + audit in a single transaction
+    const result = await withTransaction(async (client) => {
+      const { rows: updatedRows } = await client.query(
+        `UPDATE prediction
+         SET verification_status = $1,
+             verified_by = $2,
+             verified_at = now(),
+             verification_note = $3
+         WHERE id = $4
+         RETURNING id, slope_unit_id, probability, risk_level, verification_status,
+                   verified_by, verified_at, verification_note`,
+        [status, request.user.sub, note ?? null, predictionId],
+      );
+
+      const updated = updatedRows[0];
+
+      await recordAudit(client, {
+        actorId: request.user.sub,
+        actorLabel: request.user.full_name || request.user.email,
+        action: 'PREDICTION_VERIFIED',
+        entity: 'prediction',
+        entityId: predictionId,
+        before: { verification_status: prediction.verification_status },
+        after: {
+          verification_status: updated.verification_status,
+          verified_by: updated.verified_by,
+          verification_note: updated.verification_note,
+        },
+      });
+
+      return updated;
+    });
+
+    return {
+      id: Number(result.id),
+      slope_unit_id: result.slope_unit_id,
+      probability: Number(result.probability),
+      risk_level: result.risk_level,
+      verification_status: result.verification_status,
+      verified_by: Number(result.verified_by),
+      verified_by_name: request.user.full_name || request.user.email,
+      verified_at: result.verified_at instanceof Date ? result.verified_at.toISOString() : String(result.verified_at),
+      verification_note: result.verification_note,
+    };
+  };
+
+  app.patch('/api/v1/predictions/:id/verification', verificationRouteOptions, handleVerification);
+  app.patch('/api/v1/predictions/:id/verify', verificationRouteOptions, handleVerification);
 }

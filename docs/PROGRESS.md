@@ -1675,7 +1675,70 @@ by `rudevermzzz`, merged as `568887e`.
 
 **Pending**
 
-    Next is V11: Verification workflow (`PATCH /api/v1/predictions/:id/verification`)
-    for authorized officials to record human-in-the-loop decisions.
+    Nothing for V10.
+
+---
+
+## V11 — Human Verification Workflow & Immutable Audit Log ✅ 2026-09-04
+
+**What was done**
+
+    Implemented the prediction verification endpoint and audit logging,
+    fulfilling the core rule that "an AI prediction is not a confirmed disaster"
+    (ARCHITECTURE.md §14, §20, IMPLEMENTATION_STEPS.md V11).
+
+    Files created / modified:
+      backend/src/core/audit.js             recordAudit() reusable helper
+      backend/src/routes/predictions.js      PATCH /api/v1/predictions/:id/verification (and /verify alias)
+      backend/test/verification.test.js     7 comprehensive DB-backed tests
+
+    The endpoint:
+      1. Requires an authenticated session with an authorized role:
+         `SUPER_ADMIN`, `DISTRICT_ADMIN`, or `FIELD_OFFICER`.
+      2. Rejects unauthorized roles (`CITIZEN`) with 403 Forbidden.
+      3. Validates district boundaries (`assertDistrictAccess`): an Aizawl
+         officer cannot verify a Sikkim prediction (403 Forbidden).
+      4. Executes atomically inside a single database transaction:
+         - Updates `prediction` row setting `verification_status`
+           (`CONFIRMED`, `FALSE_POSITIVE`, `NEEDS_REVIEW`), `verified_by`,
+           `verified_at = now()`, and `verification_note`.
+         - Writes an append-only audit trail in `audit_log` with before
+           and after state snapshots and actor label.
+      5. Guarantees the invariant: scientific `probability` and `risk_level`
+         are NEVER modified during human verification.
+
+**How it was tested**
+
+    `npm test` in backend:
+      -> 83 pass, 0 fail (0.72 s)
+
+    `npm run test:db` in backend:
+      -> 125 pass, 0 fail, 5 skipped (1.21 s)
+      -> 401 on unauthenticated request.
+      -> 403 on CITIZEN role attempting verification.
+      -> 422 on invalid status value.
+      -> CRUCIAL NEGATIVE TEST: Aizawl admin attempting to verify a
+         prediction in Gangtok/Sikkim is blocked with 403 Forbidden.
+      -> Successful verification: status transitions to CONFIRMED,
+         `verified_by` and `verified_at` populated.
+      -> INVARIANT CHECK: probability (0.75) and risk_level (HIGH)
+         remain strictly untouched.
+      -> AUDIT CHECK: row recorded in `audit_log` with correct actor label
+         and before/after JSON snapshots.
+      -> IMMUTABILITY CHECK: Attempting to `UPDATE` or `DELETE` rows from
+         `audit_log` is rejected with `restrict_violation` by PostgreSQL triggers.
+
+**What broke or was learned**
+
+    node-postgres returns PostgreSQL `BIGSERIAL` primary keys as strings in
+    JavaScript to preserve 64-bit precision. In the test setup, casting
+    the returned `pAizawl[0].id` to `Number()` avoids strict equality type
+    mismatches (`371 !== '371'`) against the JSON payload response.
+
+**Pending**
+
+    Next is V12: Alert state machine + human authorization gate
+    (`DRAFT` -> `PENDING_AUTHORISATION` -> `AUTHORISED` / `DISPATCHED`).
+
 
 
