@@ -237,6 +237,7 @@ landslide-platform/
 | [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) | Branching, commits, conflict rules |
 | [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | Fixed JSON formats between ML → backend → frontend |
 | [docs/FRONTEND_HANDOFF.md](docs/FRONTEND_HANDOFF.md) | For Riya: which endpoints are live today, how to start the backend, and the fetch code to draw the polygons |
+| [docs/FRONTEND_REVIEW.md](docs/FRONTEND_REVIEW.md) | Review of the 4 Sept frontend report against the live database — which figures are real and which must be corrected before the demo |
 | [data/README.md](data/README.md) | Data sources, licences, citations |
 
 ---

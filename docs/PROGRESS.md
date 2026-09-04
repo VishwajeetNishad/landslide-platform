@@ -1493,3 +1493,125 @@ by `rudevermzzz`, merged as `568887e`.
         non-NULL when an `exposure` row exists. Currently a code invariant
         in one route. A CHECK cannot express it (cross-table), so it would
         need a trigger.
+
+---
+
+## F0 — frontend report reviewed (Riya) ⚠️ 2026-09-04
+
+**What was done**
+
+    Riya sent `TERRAGUARD.docx`, a 5-section architecture and workflow
+    dossier for the frontend. Nothing is merged: `frontend/` on origin still
+    contains only the five `.gitkeep` files from V1, and Riya has pushed no
+    branch, so this entry covers a document, not code. The components it
+    names (`src/dashboard/Dashboard.tsx`,
+    `src/dashboard/DedicatedRiskMapView.tsx`, and six more) exist only on
+    her machine and have not been seen here.
+
+    Reviewed it line by line against the live database and a captured
+    `GET /api/v1/risk/current` response, and wrote `docs/FRONTEND_REVIEW.md`
+    (Hinglish, addressed to her) with the corrections in priority order.
+
+    What the document gets right, and it is the harder half: the
+    human-in-the-loop pipeline with no automatic public broadcast, the
+    separation of failure probability from public risk, the two-step
+    authorization gate requiring an officer ID and a statutory reason, and
+    the CAP 1.2 field list including `status: Exercise`. All four match
+    ARCHITECTURE.md. The eight-workspace breakdown is a sound demo flow.
+
+    What must change before 5 September, all of it fabricated figures:
+
+      - "2,410 micro-catchment slope units (AZ-1001 to AZ-1088)". There are
+        5 slope units, all `is_mock: true`, and `risk/current` returns 3
+        features. The stated range is itself only 88 ids, so the number does
+        not agree with its own citation.
+      - "4 High-Risk units, 7 pending officer reviews" against an actual
+        summary of 2 HIGH, 0 MEDIUM, 1 LOW, 3 pending.
+      - AZ-1088 given as "Upper Chite Valley Catchment" at 88% probability;
+        it is ward Bawngkawn at 0.95. AZ-1042 "Ramhlun North, 91%, ~75
+        residents" does not exist in the database at all -- a fabricated
+        slope unit with a fabricated population, which is the explicit
+        prohibition in ARCHITECTURE.md §1.
+      - An entire sensor telemetry section: automated rain gauges,
+        vibrating-wire piezometers in kPa, borehole inclinometers in mm/hr,
+        IMD Doppler radar, "live sensor network health". No sensor network
+        exists in any form.
+      - A four-channel dissemination gateway (DoT/C-DOT cell broadcast
+        "overrides do-not-disturb", NDMA Sachet push, solar acoustic sirens,
+        VHF to Mizoram Police and SDRF). None of the four is integrated;
+        V14 is a mock SMS sender.
+      - "Cryptographic officer sign-off" and "unique cryptographic alert
+        ID". There is no cryptography anywhere in the system.
+      - "Data State: Grounded in authentic geography of Aizawl District
+        micro-catchments", which directly contradicts the disclaimer the
+        backend itself emits: "illustrative geometry, not derived from a
+        DEM. Do not quote their areas or locations as measurements."
+      - The mandatory `is_demo_data` orange banner is not mentioned
+        anywhere in the document.
+
+    And one that is a different kind of problem from the rest: the title
+    page lists "Coordinating Agencies: Geological Survey of India (GSI) •
+    National Disaster Management Authority (NDMA)" and classifies the
+    document as an "Official Operational Reference". Neither agency has been
+    contacted. Naming them as coordinating agencies on an intern prototype
+    is a misrepresentation that outlives the demo, so it is first in the
+    priority list. Replaced in the review with an honest "reference
+    standards" framing, which costs nothing and is defensible.
+
+**How it was tested**
+
+    Not tested -- there is no code here to run. The document's claims were
+    checked against two things that were run:
+
+      - `SELECT id, ward_name, is_mock, area_ha FROM slope_unit` ->
+        AZ-0964 Durtlang, AZ-1088 Bawngkawn, AZ-1142 Melthum,
+        AZ-1147 Melthum, AZ-1203 Chaltlang. Five rows, all mock.
+      - `GET /api/v1/risk/current?district=aizawl` against the running
+        server -> 3 features; summary 2 HIGH / 0 MEDIUM / 1 LOW /
+        0 not computed / 3 pending / lead time 10 h.
+
+    Whether her build actually compiles, whether the eight views render, and
+    whether the app fetches from the API at all could not be verified here,
+    because none of it is in the repository. The document mentions no
+    endpoint and describes "full fallback resilience", which suggests the
+    data is currently hardcoded client-side, but that is an inference from
+    the prose, not something confirmed.
+
+**What broke or was learned**
+
+    `docs/FRONTEND_HANDOFF.md` was written on the assumption that the risk
+    to guard against was Riya misreading a field name. The real risk turned
+    out to be the opposite direction: the frontend inventing figures the
+    backend never sent, in a document that reads as more authoritative than
+    anything the backend produces. The handoff doc says what the fields
+    mean; it never said "do not add numbers of your own".
+
+    The backend has spent seven steps making it structurally hard to state
+    something it cannot support -- 422 on a model-supplied `risk_level`,
+    NULL rather than LOW for uncomputed exposure, a disclaimer string
+    emitted with every mock polygon, placeholder-citation warnings. None of
+    that reaches a slide deck. Honesty enforced in the API is not honesty
+    enforced in the presentation, and the presentation is what the judges
+    see.
+
+**Pending**
+
+    Flagged back to Riya, in the order given in docs/FRONTEND_REVIEW.md §5:
+
+      1. [F0] Remove GSI/NDMA as coordinating agencies; state "internal
+         prototype, not an operational system".
+      2. [F0] Drive every counter from `summary` in the API response.
+      3. [F0] Replace AZ-1042 with the real AZ-1088 / AZ-1142 contrast,
+         which is a stronger demonstration of the same point.
+      4. [F0] Confirm the `is_demo_data` banner is implemented.
+      5. [F0] Badge the telemetry and dissemination sections PLANNED / NOT
+         CONNECTED rather than showing values.
+      6. [F1] Connect to the live API. This is checkpoint I1 and is still
+         unverified -- five polygons on the map from
+         `GET /api/v1/risk/current`, screenshot back here.
+
+    Also unresolved: `snake_line.critical_curve` is served hardcoded from
+    the live endpoint with nothing marking it illustrative (see the V8/V9
+    review entry). Riya's snake chart will render it as though it were
+    calibrated. Whichever of us gets there first should add the flag.
+
