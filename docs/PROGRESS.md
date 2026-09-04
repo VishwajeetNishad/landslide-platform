@@ -1920,5 +1920,46 @@ by `rudevermzzz`, merged as `568887e`.
 **Pending**
 
     Backend Roadmap (V0 - V14) is 100% COMPLETE.
-    Next: End-to-End Integration Checkpoint (I3) rehearsing the complete 4-step story:
-    ML Ingest -> Risk calculation -> Map/Dashboard feed -> Verification -> Authorisation -> CAP XML & SMS.
+    Next: End-to-End Integration Checkpoint (I3).
+
+---
+
+## Checkpoint I3 — Full End-to-End Demo Rehearsal & Live Integration Verification ✅ 2026-09-04
+
+Commits `c8d11d8` -> merge `b263808`
+
+**What was done**
+
+    Built and verified the complete 6-beat end-to-end demo narrative against live
+    PostgreSQL/PostGIS, fulfilling IMPLEMENTATION_STEPS.md Checkpoint I3 and DEMO_PLAN.md:
+      1. Beat 1 (ML Ingest): Ingested forecast run with temporal cutoff timestamp verification.
+      2. Beat 2 (Risk Matrix & AZ-1088 Proof Case): Validated AZ-1088 (Prob 0.95, Exposure 0 -> LOW)
+         vs AZ-1142 (Prob 0.72, Exposure 120 + School -> HIGH).
+      3. Beat 3 (Human Verification): Field Officer signs off (CONFIRMED), probability untouched.
+      4. Beat 4 (Human Authorization Safety Gate): Direct SQL bypass blocked by database CHECK constraint.
+      5. Beat 5 (Dissemination): OASIS CAP 1.2 XML generated (<status>Exercise</status>),
+         3-language mock SMS delivered (en, hi, mizo) to mock_sms_dispatch.
+      6. Beat 6 (Audit Trail): Verified immutable audit records; UPDATE/DELETE blocked by triggers.
+
+    Files created:
+      backend/test/e2e_checkpoint_i3.test.js  Automated 6-beat test runner
+      scripts/demo_rehearsal.js               Standalone CLI demo rehearsal runner with colorized output
+
+**How it was tested**
+
+    1. Automated test suite:
+       `node --test backend/test/e2e_checkpoint_i3.test.js` -> 6 of 6 beats passed.
+    2. CLI demo rehearsal runner:
+       `node scripts/demo_rehearsal.js` -> 100% SUCCESS in 1.2s.
+    3. Full database test suite:
+       `npm run test:db` -> 156 passed, 0 failed, 7 skipped across 28 suites.
+
+**What broke or was learned**
+
+    In test fixture paths, resolving relative to process.cwd() broke when run from
+    different working directories. Fixed by anchoring paths to `import.meta.url`.
+
+**Pending**
+
+    Phase 2: Frontend Dashboard (Riya: Steps F1-F7).
+    Demo seed script: `scripts/seed_demo.js` (Vishwajeet).
