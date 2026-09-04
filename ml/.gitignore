@@ -1,0 +1,13 @@
+data/
+__pycache__/
+*.pyc
+
+# Generated prototype outputs
+rainfall/rainfall_clean.csv
+tank/soil_water_index.csv
+runout/runout_envelopes.geojson
+susceptibility/prototype_training_data.csv
+susceptibility/susceptibility_model.txt
+susceptibility/susceptibility_predictions.geojson
+
+final_output/final_ml_output.json
