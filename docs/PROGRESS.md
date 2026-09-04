@@ -1615,3 +1615,67 @@ by `rudevermzzz`, merged as `568887e`.
     review entry). Riya's snake chart will render it as though it were
     calibrated. Whichever of us gets there first should add the flag.
 
+---
+
+## V10 — Auth: JWT + RBAC & District Scoping ✅ 2026-09-04
+
+**What was done**
+
+    Implemented zero-external-dependency JWT authentication and Role-Based
+    Access Control (RBAC) with district-scoped data boundaries, fulfilling
+    ARCHITECTURE.md §20 and IMPLEMENTATION_STEPS.md V10.
+
+    Files created / modified:
+      backend/src/core/auth.js             createToken, verifyToken, scrypt hashPassword/verifyPassword, authenticate, optionalAuthenticate
+      backend/src/core/rbac.js             ROLES, requireRole, assertDistrictAccess
+      backend/src/core/config.js           jwtSecret, jwtExpiresInSeconds
+      backend/src/db/migrations/009_auth.sql  password_hash column + seeded demo accounts + 'gangtok' district
+      backend/src/routes/auth.js           POST /api/v1/auth/login, GET /api/v1/auth/me
+      backend/src/routes/risk.js           preHandler: optionalAuthenticate + assertDistrictAccess
+      backend/src/app.js                   registered registerAuthRoutes
+      backend/test/auth.test.js            13 unit & DB tests covering JWT, scrypt, RBAC, and negative boundary
+
+    Zero-dependency security:
+      Uses Node 22's native `node:crypto` (HMAC-SHA256 & scrypt) rather than
+      external packages, eliminating supply chain attack surface and avoiding
+      Fastify 5 plugin version friction.
+
+    District Scoping:
+      `assertDistrictAccess(user, districtId)` ensures:
+        - `SUPER_ADMIN`: access to all districts
+        - `DISTRICT_ADMIN` & `FIELD_OFFICER`: strictly bounded to their
+          `assigned_districts` array.
+        - Boundary breach returns `403 Forbidden` with a clear explanation.
+
+**How it was tested**
+
+    `npm test` in backend:
+      -> 83 pass, 0 fail (0.69 s)
+      -> JWT creation, claim extraction, malformed token rejection (401),
+         tampered payload rejection (401), expired token rejection (401),
+         scrypt password hash & constant-time verify.
+      -> Standalone RBAC logic tests for SUPER_ADMIN, DISTRICT_ADMIN.
+
+    `npm run test:db` in backend:
+      -> 118 pass, 0 fail, 5 skipped (1.18 s)
+      -> Live login with `prototype2026!` password.
+      -> Invalid password returns 401.
+      -> `GET /api/v1/auth/me` returns current user claims.
+      -> CRUCIAL NEGATIVE TEST: Aizawl admin querying Gangtok/Sikkim risk
+         data with Bearer token is rejected with 403 Forbidden!
+      -> Aizawl admin querying Aizawl data returns 200 OK.
+      -> Super admin querying Gangtok data returns 200 OK.
+
+**What broke or was learned**
+
+    `app_user.assigned_districts` is a PostgreSQL `TEXT[]` array. In JS,
+    it arrives as an Array of strings. Comparing district identifiers case-
+    insensitively (`districtId.toLowerCase()`) prevents subtle casing bugs
+    ('aizawl' vs 'Aizawl') while preserving strict regional isolation.
+
+**Pending**
+
+    Next is V11: Verification workflow (`PATCH /api/v1/predictions/:id/verification`)
+    for authorized officials to record human-in-the-loop decisions.
+
+

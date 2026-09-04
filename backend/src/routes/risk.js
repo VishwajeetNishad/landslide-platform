@@ -31,7 +31,9 @@
  * forecast data available".
  */
 
+import { optionalAuthenticate } from '../core/auth.js';
 import { config } from '../core/config.js';
+import { assertDistrictAccess } from '../core/rbac.js';
 import { getPool, query } from '../db/pool.js';
 
 function requireDatabase() {
@@ -304,10 +306,17 @@ export async function registerRiskRoutes(app) {
           },
         },
       },
+      preHandler: optionalAuthenticate,
     },
     async (request) => {
       requireDatabase();
       const districtId = request.query.district ?? config.pilotDistrictId;
+
+      // RBAC District Scoping (ARCHITECTURE.md §20):
+      // If a user token is provided, verify they have permission for this district.
+      if (request.user) {
+        assertDistrictAccess(request.user, districtId);
+      }
 
       // Verify district exists
       const { rows: districtRows } = await query('SELECT id, name, state FROM district WHERE id = $1', [
