@@ -326,28 +326,79 @@ describe('ingest against the database', { skip: !HAS_DB && 'DATABASE_URL is not 
     assert.ok(out.forecast_run_id > 0);
   });
 
-  // The whole point of the endpoint. risk_level must be NULL until V8
-  // computes it from probability and exposure, and NULL must be returned
-  // explicitly rather than omitted -- a missing key could be read as
-  // "risk was computed and came out fine".
-  test('nothing is stored with a risk_level', async () => {
-    const res = await app.inject({ method: 'POST', url: URL_INGEST, payload: tagged('null-risk') });
-    assert.equal(res.json().risk_level, null);
+  // The whole point of the endpoint, restated for V8.
+  //
+  // Until V8 the rule was "risk_level is always NULL on ingest". V8 computes
+  // it in the same transaction, so the rule is now conditional: computed
+  // where an exposure block was sent, NULL where it was not. The human
+  // fields are untouched either way -- that part was never conditional.
+  test('risk_level is computed where exposure was sent, and no human field is touched', async () => {
+    const res = await app.inject({ method: 'POST', url: URL_INGEST, payload: tagged('risk-computed') });
+    assert.equal(res.statusCode, 201, JSON.stringify(res.json()));
+
+    // All three contract predictions carry an exposure block, so none is
+    // left unassessed.
+    assert.equal(res.json().risk_levels.not_computed, 0);
 
     const { query } = await import('../src/db/pool.js');
     const { rows } = await query(
-      `SELECT p.risk_level, p.verification_status, p.verified_by, p.verified_at
+      `SELECT p.slope_unit_id, p.probability, p.risk_level,
+              p.verification_status, p.verified_by, p.verified_at
        FROM prediction p JOIN forecast_run f ON f.id = p.forecast_run_id
-       WHERE f.model_version = 'test-null-risk'`,
+       WHERE f.model_version = 'test-risk-computed'`,
     );
 
     assert.equal(rows.length, 3);
     for (const r of rows) {
-      assert.equal(r.risk_level, null, 'risk_level must be NULL until exposure is known');
+      assert.ok(
+        ['LOW', 'MEDIUM', 'HIGH'].includes(r.risk_level),
+        `${r.slope_unit_id}: exposure was sent, so risk_level must be computed, got ${r.risk_level}`,
+      );
       assert.equal(r.verification_status, 'PENDING_VERIFICATION');
       assert.equal(r.verified_by, null);
       assert.equal(r.verified_at, null);
     }
+
+    // AZ-1088 is the case the whole project rests on: the highest
+    // probability in the file and the lowest risk, because nothing is below
+    // it. If this ever reads HIGH, risk has collapsed back into confidence.
+    const az1088 = rows.find((r) => r.slope_unit_id === 'AZ-1088');
+    assert.ok(az1088, 'AZ-1088 must be in the contract file');
+    assert.ok(Number(az1088.probability) >= 0.9, 'AZ-1088 is the high-probability case');
+    assert.equal(az1088.risk_level, 'LOW', 'AZ-1088 has no exposure below it, so risk is LOW');
+  });
+
+  // The half of the rule that is easy to get wrong, and was wrong when V8
+  // first landed: calculateRiskLevel() was called for every prediction, and
+  // getExposureBand({}) returns 'low', so a prediction with no exposure
+  // block at all was stored as LOW -- indistinguishable from AZ-1088, where
+  // LOW is a finding. "Nobody has looked" must not read as "nobody is
+  // there".
+  test('a prediction with no exposure block is stored NULL, not LOW', async () => {
+    const b = tagged('no-exposure');
+    delete b.predictions[0].exposure;
+
+    const res = await app.inject({ method: 'POST', url: URL_INGEST, payload: b });
+    assert.equal(res.statusCode, 201, JSON.stringify(res.json()));
+
+    const out = res.json();
+    assert.equal(out.exposures_stored, 2);
+    assert.equal(out.risk_levels.not_computed, 1, 'the reply must admit one row was not assessed');
+
+    const { query } = await import('../src/db/pool.js');
+    const { rows } = await query(
+      `SELECT p.slope_unit_id, p.risk_level
+       FROM prediction p JOIN forecast_run f ON f.id = p.forecast_run_id
+       WHERE f.model_version = 'test-no-exposure' AND p.slope_unit_id = $1`,
+      [b.predictions[0].slope_unit_id],
+    );
+
+    assert.equal(rows.length, 1);
+    assert.equal(
+      rows[0].risk_level,
+      null,
+      'no exposure was computed, so there is no consequence term and no risk',
+    );
   });
 
   test('an unknown slope_unit_id is 422 naming the id, not a 500 from the foreign key', async () => {

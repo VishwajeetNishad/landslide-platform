@@ -144,4 +144,34 @@ describe('V8 -- risk level calculation (Risk = Likelihood x Consequence)', () =>
       assert.equal(risk, 'HIGH');
     });
   });
+
+  describe('No exposure at all', () => {
+    // The distinction the AZ-1088 case depends on. Above, zero exposure is a
+    // FINDING: a runout envelope was drawn, intersected, and came out empty,
+    // so LOW is true. Here nothing was computed, so there is no consequence
+    // term and Risk = Likelihood x Consequence has no answer. Returning LOW
+    // for both would make the two indistinguishable in the database and on
+    // the map, and the one nobody has checked would be coloured green.
+    it('returns null when no exposure argument is given', () => {
+      assert.equal(calculateRiskLevel(0.95), null);
+    });
+
+    it('returns null for an explicit null exposure', () => {
+      assert.equal(calculateRiskLevel(0.95, null), null);
+    });
+
+    it('still returns LOW for an exposure object that is present but empty', () => {
+      // `{}` means "computed, found nothing" -- a different claim from
+      // "not computed", and it keeps its band.
+      assert.equal(calculateRiskLevel(0.95, {}), 'LOW');
+    });
+
+    it('refuses a non-numeric probability instead of banding it low', () => {
+      // NaN used to fall through to the 'low' band, so a corrupt probability
+      // produced a confident LOW that looked exactly like a real one.
+      assert.throws(() => getProbabilityBand('very likely'), TypeError);
+      assert.throws(() => getProbabilityBand(undefined), TypeError);
+      assert.throws(() => calculateRiskLevel(NaN, { population_estimate: 0 }), TypeError);
+    });
+  });
 });
