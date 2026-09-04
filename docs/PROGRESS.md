@@ -1737,8 +1737,82 @@ by `rudevermzzz`, merged as `568887e`.
 
 **Pending**
 
-    Next is V12: Alert state machine + human authorization gate
-    (`DRAFT` -> `PENDING_AUTHORISATION` -> `AUTHORISED` / `DISPATCHED`).
+    Nothing for V11.
+
+---
+
+## V12 — Alert State Machine + Human Authorization Safety Gate ✅ 2026-09-04
+
+**What was done**
+
+    Implemented the disaster alerting state machine and the non-negotiable
+    human authorization safety gate per ARCHITECTURE.md §14, §20 and
+    IMPLEMENTATION_STEPS.md V12.
+
+    The core principle:
+      "A system that can alert the public by itself is a system no state
+      government will install. The gate is a feature."
+      IMD and SDMA/DDMA are the sole authorized disaster warning bodies in India.
+      The AI drafts the alert in seconds; a named human officer signs off.
+
+    Files created / modified:
+      backend/src/routes/alerts.js         POST /alerts/draft, GET /alerts, POST /alerts/:id/authorise, POST /alerts/:id/reject, POST /alerts/:id/dispatch
+      backend/src/app.js                   registered registerAlertRoutes
+      backend/test/alerts.test.js          11 unit and DB tests covering the full lifecycle and all 4 negative safety boundaries
+
+    The state machine:
+      `DRAFT` -> `PENDING_AUTHORISATION` -> `AUTHORISED` / `REJECTED` -> `DISPATCHED`
+
+    The Safety Gate:
+      1. Database CHECK constraint `alert_must_be_authorised_before_dispatch`
+         (`CHECK (status <> 'DISPATCHED' OR authorised_by IS NOT NULL)`) guarantees
+         that even if application code is bypassed or has a bug, the database
+         will refuse raw updates attempting direct dispatch.
+      2. Regional Scoping: Aizawl District Admin cannot authorize or reject
+         alerts in Sikkim/Gangtok (`403 Forbidden`).
+      3. Complete Auditability: Both authorisations and rejections atomically
+         record actor ID, actor label, and snapshots into `audit_log`.
+      4. Mandatory Rejection Reason: Rejections require a non-blank reason
+         (`alert_rejection_needs_a_reason`).
+
+**How it was tested**
+
+    `npm test` in backend:
+      -> 84 pass, 0 fail (0.86 s)
+
+    `npm run test:db` in backend:
+      -> 135 pass, 0 fail, 6 skipped (1.32 s)
+      -> 503 when DB is unconfigured.
+      -> POST /api/v1/alerts/draft starts in PENDING_AUTHORISATION.
+      -> GET /api/v1/alerts serves Decision Card context (slope unit, ward,
+         probability, risk level, population estimate, buildings count).
+      -> CRUCIAL NEGATIVE TEST 1 (Bypass Attempt): Raw SQL query attempting
+         `UPDATE alert SET status = 'DISPATCHED'` without an authorizer fails
+         with `alert_must_be_authorised_before_dispatch` constraint violation.
+      -> CRUCIAL NEGATIVE TEST 2 (Regional Scoping): Aizawl admin attempting
+         to authorize a Sikkim alert is rejected with 403 Forbidden.
+      -> CRUCIAL NEGATIVE TEST 3 (Reason Mandatory): Rejecting without a reason
+         is rejected with 422.
+      -> CRUCIAL NEGATIVE TEST 4 (Premature Dispatch): Calling /dispatch before
+         an alert is AUTHORISED is rejected with 422.
+      -> POSITIVE FLOW: Officer authorizes alert -> transitions to AUTHORISED,
+         populates `authorised_by` and `authorised_at`, records `ALERT_AUTHORISED`.
+      -> POSITIVE FLOW: Dispatching authorized alert -> transitions to
+         DISPATCHED, sets `dispatched_at`, records `ALERT_DISPATCHED`.
+      -> POSITIVE FLOW: Officer rejects alert with valid reason -> transitions
+         to REJECTED, sets `rejection_reason`, records `ALERT_REJECTED`.
+
+**What broke or was learned**
+
+    In Fastify routes with optional request bodies (e.g. POST /alerts/:id/authorise
+    where body `{ auto_dispatch: true }` is optional), the schema body type
+    must be declared as `type: ['object', 'null']`. If declared as `type: 'object'`,
+    requests sent without a body trigger the schema validator and fail with 422.
+
+**Pending**
+
+    Next is V13: Audit log query API and live tamper-proof verification demonstration.
+
 
 
 

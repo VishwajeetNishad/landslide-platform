@@ -22,6 +22,7 @@ import swaggerUi from '@fastify/swagger-ui';
 
 import { config } from './core/config.js';
 import { closePool, setDbLogger } from './db/pool.js';
+import { registerAlertRoutes } from './routes/alerts.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMetaRoutes } from './routes/meta.js';
 import { registerPredictionRoutes } from './routes/predictions.js';
@@ -265,6 +266,7 @@ export async function buildApp({ logger = true } = {}) {
   await registerSlopeUnitRoutes(app);
   await registerPredictionRoutes(app);
   await registerRiskRoutes(app);
+  await registerAlertRoutes(app);
 
   return app;
 }
