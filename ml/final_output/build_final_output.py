@@ -12,7 +12,7 @@ import pandas as pd
 
 BASE = Path("..")
 
-PREDICTIONS = BASE / "susceptibility" / "susceptibility_predictions.geojson"
+PREDICTIONS = BASE / "susceptibility" / "image_susceptibility_predictions.geojson"
 SWI_FILE = BASE / "tank" / "soil_water_index.csv"
 RAIN_FILE = BASE / "rainfall" / "rainfall_clean.csv"
 RUNOUT_FILE = BASE / "runout" / "runout_envelopes.geojson"
